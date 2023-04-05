@@ -287,7 +287,7 @@ namespace ThunderByteScan {
 	@param results A map of pattern strings to uintptr_t values indicating the first occurrence of each pattern found.
 	@return True if the search was successful, false otherwise.
 	*/
-	bool LocalFindPatternBatchFirst(const std::vector<std::string>& patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTSFIRST& results)
+	inline bool LocalFindPatternBatchFirst(const std::vector<std::string>& patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTSFIRST& results)
 	{
 		for (const auto& str : patterns)
 			results[str] = 0;
@@ -309,7 +309,7 @@ namespace ThunderByteScan {
 	@return True if the search was successful, false otherwise.
 
 	*/
-	bool LocalFindPatternBatch(const std::vector<std::string>& patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTS& results)
+	inline bool LocalFindPatternBatch(const std::vector<std::string>& patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTS& results)
 	{
 		for (const auto& str : patterns)
 			results[str] = std::vector<uintptr_t>();
