@@ -6,7 +6,8 @@
 #include <unordered_map>
 #include <sstream>
 #include <memory>
-#include <ThreadPool.hpp>
+#include "ThreadPool.hpp"
+#include <unordered_set>
 
 namespace ThunderByteScan {
 
@@ -19,6 +20,7 @@ namespace ThunderByteScan {
 		std::vector<unsigned char> ignoreMask;
 		std::string patternName;
 		size_t patternSize;
+		bool foundAtLeastOne = false;
 	};
 
 #ifdef USE_SSE2
@@ -155,7 +157,10 @@ namespace ThunderByteScan {
 		for (size_t i = startAddr; i <= (endAddr - pattern->patternSize) && pattern->reportResults; i++)
 		{
 			if (fast_memcmp_with_mask(pattern->rawMask.data(), (unsigned char*)i, (size_t)pattern->patternSize, pattern->ignoreMask.data()))
+			{
+				pattern->foundAtLeastOne = true;
 				pattern->reportResults = foundCallback(pattern->patternName, (uintptr_t)i);
+			}
 		}
 	}
 
@@ -177,18 +182,31 @@ Searches for multiple patterns within the specified memory range and calls a cal
 */
 	inline bool LocalFindPatternBatch(const std::vector<PatternInfo*>& patterns, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback)
 	{
-		ThreadPool pattsTp;
+		bool bResult = true;
 
-		for (PatternInfo* patternInfo : patterns)
 		{
-			pattsTp.enqueue([&](PatternInfo* pattInf, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback) {
+			ThreadPool pattsTp;
 
-				LocalFindPatternInfoTask(pattInf, startAddr, endAddr, foundCallback);
+			for (PatternInfo* patternInfo : patterns)
+			{
+				pattsTp.enqueue([&](PatternInfo* pattInf, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback) {
 
-				}, patternInfo, startAddr, endAddr, foundCallback);
+					LocalFindPatternInfoTask(pattInf, startAddr, endAddr, foundCallback);
+
+					}, patternInfo, startAddr, endAddr, foundCallback);
+			}
 		}
 
-		return true;
+		for (PatternInfo* pCurr : patterns)
+		{
+			if (pCurr->foundAtLeastOne == false)
+			{
+				bResult = false;
+				break;
+			}
+		}
+
+		return bResult;
 	}
 
 
@@ -310,16 +328,36 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	/**
 
 	Searches for the first occurrence of a batch of patterns in a specified memory range.
+	Remarks: if one of the patterns alredy has a result in the BATCHPATTERNSSCANRESULTSFIRST, this function wont touch it, and will ignore searching for that pattern, this way it avoids overriding the alredy there results
+	this is very useful for the case scenario where you want to search in multiple areas, for multiple patterns, and you are not sure if for example all patterns will be inside a specific memory block
 	@param patterns A vector of strings containing the patterns to search for.
 	@param startAddr The starting address of the memory range to search in.
 	@param endAddr The ending address of the memory range to search in.
 	@param results A map of pattern strings to uintptr_t values indicating the first occurrence of each pattern found.
-	@return True if the search was successful, false otherwise.
+	@return True if all patterns were found.
 	*/
-	inline bool LocalFindPatternBatchFirst(const std::vector<std::string>& patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTSFIRST& results)
+	inline bool LocalFindPatternBatchFirst(const std::vector<std::string>& _patterns, uintptr_t startAddr, uintptr_t endAddr, BATCHPATTERNSSCANRESULTSFIRST& results)
 	{
+		std::vector<std::string> patterns = _patterns;	// Copy of all patterns
+														// So we can modify the array
+		std::unordered_set<std::string> toRemove;
+
 		for (const auto& str : patterns)
-			results[str] = 0;
+		{
+			if (results.find(str) != results.end())
+			{
+				// If alredy has a result, then ignore
+				if (results[str] != 0x0)
+					toRemove.insert(str);
+			} else 
+				results[str] = 0;
+		}
+
+		// Removing the ones who alredy have a result
+		// We dont want to overwrite the cache
+		patterns.erase(std::remove_if(patterns.begin(), patterns.end(), [&](const std::string& str) {
+			return toRemove.count(str) > 0;
+			}), patterns.end());
 
 		return LocalFindPatternBatch(patterns, startAddr, endAddr, [&](const std::string& pattStr, uintptr_t rslt) {
 			results[pattStr] = rslt;;
