@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <memory>
+#include <ThreadPool.hpp>
 
 namespace ThunderByteScan {
 
@@ -144,6 +145,54 @@ namespace ThunderByteScan {
 		} while (ss >> str);
 	}
 
+	inline void LocalFindPatternInfoTask(PatternInfo* pattern, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback)
+	{
+		bool bAtLeastOneFound = false;
+
+		if (startAddr == 0 || endAddr == 0 || startAddr >= endAddr)
+			return;
+
+		for (size_t i = startAddr; i <= (endAddr - pattern->patternSize) && pattern->reportResults; i++)
+		{
+			if (fast_memcmp_with_mask(pattern->rawMask.data(), (unsigned char*)i, (size_t)pattern->patternSize, pattern->ignoreMask.data()))
+				pattern->reportResults = foundCallback(pattern->patternName, (uintptr_t)i);
+		}
+	}
+
+
+/**
+Searches for multiple patterns within the specified memory range and calls a callback function for each found occurrence.
+
+@param patterns A vector of unique ptrs of PatternInfo representing the information patterns to search for.
+@param startAddr The starting address of the memory range to search within.
+@param endAddr The ending address of the memory range to search within.
+@param foundCallback A callback function that is called for each occurrence of a pattern found. The function should have the signature "bool func(const std::string& patt, uintptr_t addr)", where "patt" is the name of the pattern found(pattern itself usually) and "addr" is the address of the found pattern.
+
+@return Returns true if the search was successful, false otherwise.
+
+@remarks The function assumes that the memory addresses being searched are valid and accessible.
+
+@see fast_memcmp_with_mask, ParsePattern
+
+*/
+	inline bool LocalFindPatternBatch(const std::vector<PatternInfo*>& patterns, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback)
+	{
+		ThreadPool pattsTp;
+
+		for (PatternInfo* patternInfo : patterns)
+		{
+			pattsTp.enqueue([&](PatternInfo* pattInf, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(const std::string& patt, uintptr_t addr)> foundCallback) {
+
+				LocalFindPatternInfoTask(pattInf, startAddr, endAddr, foundCallback);
+
+				}, patternInfo, startAddr, endAddr, foundCallback);
+		}
+
+		return true;
+	}
+
+
+
 	/**
 	Searches for multiple patterns within the specified memory range and calls a callback function for each found occurrence.
 
@@ -183,32 +232,12 @@ namespace ThunderByteScan {
 			allPatternsInfo.push_back(std::move(currPi));
 		}
 
-		for (size_t i = startAddr; i <= endAddr; i++)
-		{
-			bool stillReportResults = false;
+		std::vector<ThunderByteScan::PatternInfo*> allPatternsInfop;
 
-			for (auto& currPatInf : allPatternsInfo)
-			{
-				if (!currPatInf->reportResults)
-					continue;
+		for (auto& curr : allPatternsInfo)
+			allPatternsInfop.push_back(curr.get());
 
-				stillReportResults = true;
-
-				if ((i + currPatInf->patternSize) > (size_t)endAddr)
-					break;
-
-				if (fast_memcmp_with_mask(currPatInf->rawMask.data(), (unsigned char*)i, (size_t)currPatInf->patternSize, currPatInf->ignoreMask.data()))
-				{
-					bAtLeastOneFound = true;
-
-					if (!foundCallback(currPatInf->patternName, (uintptr_t)i))
-						currPatInf->reportResults = false;
-				}
-			}
-
-			if (!stillReportResults)
-				break;
-		}
+		bAtLeastOneFound = LocalFindPatternBatch(allPatternsInfop, startAddr, endAddr, foundCallback);
 
 		for (auto& currPatInf : allPatternsInfo)
 		{
