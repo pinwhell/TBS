@@ -1,4 +1,6 @@
 
+#define USE_SSE2
+
 #include <random>
 #include <algorithm>
 #include <cstring>
@@ -19,10 +21,11 @@ int main() {
     constexpr size_t pattern_size = 8;
     uint8_t pattern[pattern_size] = { 0xAA, 0xBB, 0xCC, 0xDD, 0xDD, 0xCC, 0xBB, 0xAA };
 
-    char * buffer = (char*)malloc(1000000);
+    size_t buffSz = 1000000;
+    char * buffer = (char*)malloc(buffSz);
 
     // Insert pattern in the middle
-    const size_t pattern_offset = 1000000 / 2 - pattern_size / 2;
+    const size_t pattern_offset = buffSz / 2 - pattern_size / 2;
     std::memcpy(&buffer[pattern_offset], pattern, pattern_size);
 
     // Perform search on buffer
@@ -30,12 +33,19 @@ int main() {
 
     uintptr_t result;
     MEASURE(LocalFindPatternFirst, ThunderByteScan::LocalFindPatternBatchFirst({
-        "AA BB CC DD",
-        "DD CC BB AA"
-        }, (uintptr_t)buffer, (uintptr_t)buffer + 1000000, bpsrf));
+        "AA BB ? DD",
+        "DD ? BB AA",
+        "CC ? ? CC"
+        }, (uintptr_t)buffer, (uintptr_t)buffer + buffSz, bpsrf));
 
-    if ((uintptr_t)buffer + pattern_offset == bpsrf["AA BB CC DD"])
-        std::cout << "Worked";
+    if ((uintptr_t)buffer + pattern_offset == bpsrf["AA BB ? DD"])
+        std::cout << "Worked 1\n";
+
+    if ((uintptr_t)buffer + pattern_offset + 4 == bpsrf["DD ? BB AA"])
+        std::cout << "Worked 2\n";
+
+    if ((uintptr_t)buffer + pattern_offset + 2 == bpsrf["CC ? ? CC"])
+        std::cout << "Worked 3\n";
 
     return 0;
 }
