@@ -293,7 +293,7 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	@param results A vector to store the addresses of all matches found.
 	@return True if the search was successful, false otherwise.
 	*/
-	bool LocalFindPattern(const std::string& pattern, uintptr_t startAddr, uintptr_t endAddr, std::vector<uintptr_t>& results)
+	inline bool LocalFindPattern(const std::string& pattern, uintptr_t startAddr, uintptr_t endAddr, std::vector<uintptr_t>& results)
 	{
 		return LocalFindPattern(pattern, startAddr, endAddr, [&](uintptr_t addrFound) {
 
