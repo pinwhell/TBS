@@ -125,6 +125,9 @@ void TestCaseScenarioMultiThreadedSimultaneousUncertainScan()
     else if (bpsrf.ResultWasFoundByPattern("offsetMemberX", "? 20 6F 66 66 73 65 74 20 6B 65 72 6E 65 6C")) // Then offset is at the first byte from the base
         result = pResultBase[0]; // '1'
 
+    if (result == '1')
+        std::cout << "Worked!\n";
+
     free(kernelBuff);
     printf("\n");
 }
