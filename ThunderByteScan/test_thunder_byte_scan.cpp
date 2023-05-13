@@ -34,7 +34,6 @@ void TestMultiThreadedSimultaneousScan()
     // Perform search on buffer
     ThunderByteScan::BatchPatternsScanResultFirst bpsrf;
 
-    uintptr_t result;
     MEASURE(SimultaneousPatterns, std::cout << std::boolalpha << ThunderByteScan::LocalFindPatternBatchFirst({
         "AA BB ? DD",
         "DD ? BB AA",

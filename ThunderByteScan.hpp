@@ -11,12 +11,29 @@
 
 namespace ThunderByteScan {
 
+	/**
+
+	@class BatchPatternsScanResults
+	@brief This class is used to store the results of a batch pattern scan operation.
+	This class is used to store the results of a batch pattern scan operation. It stores a map of pattern identifiers to a vector of uintptr_t values representing the memory addresses where the pattern was found.
+	*/
 	class BatchPatternsScanResults {
 	private:
 		std::unordered_map<std::string, std::vector<uintptr_t>> mResults;
 
 	public:
 		
+		/**
+* @brief Returns the first result of a specified scan.
+*
+* @param uid The unique identifier for the scan.
+*
+* @return The uintptr_t address of the first result of the specified scan.
+*
+* This function returns the uintptr_t address of the first result of a scan with
+* the specified unique identifier(pattern itself by default). If the scan has not yet been registered, or if
+* it has no results, the function returns 0.
+*/
 		uintptr_t getFirst(const std::string& uid)
 		{
 			// Checking to see if uid has even registered a vector
@@ -31,6 +48,16 @@ namespace ThunderByteScan {
 			return mResults[uid][0];
 		}
 
+		/**
+* @brief sets the first result of a specified scan.
+*
+* @param uid The unique identifier for the scan.
+*
+* @return void.
+*
+* This function assign the uintptr_t address of the first result of a scan with
+* the specified unique identifier(pattern itself by default).
+*/
 		void setFirst(const std::string& uid, uintptr_t result)
 		{
 			// Checking to see if uid has even registered a vector
@@ -44,11 +71,25 @@ namespace ThunderByteScan {
 				mResults[uid][0] = result;
 		}
 
+		/**
+
+	Checks if the given uid has any result(s) in the mResults unordered map.
+	@param uid The unique identifier to check for results.
+	@param checkResult A boolean parameter indicating whether to check the result value is zero(if so, consider non existing). Default value is false.
+	@return A boolean value representing whether the given uid has any result(s) in the mResults unordered map.
+	*/
 		bool HasResult(const std::string& uid, bool checkResult = false)
 		{
 			return getFirst(uid) != 0;
 		}
 
+		/**
+
+	Returns a reference to a std::vector of uintptr_t values containing the results associated with the given uid.
+	If the uid has no results registered, an empty vector is created and returned.
+	@param uid A std::string representing the unique identifier to retrieve the results for.
+	@return A reference to a std::vector of uintptr_t values containing the results associated with the given uid.
+	*/
 		std::vector<uintptr_t>& getResults(const std::string& uid)
 		{
 			if (mResults.find(uid) == mResults.end())
@@ -95,6 +136,16 @@ namespace ThunderByteScan {
 		std::atomic_bool* atomStopped;
 	};
 
+	/**
+
+	@class BatchPatternsScanResultFirst
+
+	@brief A class that represents the result of a batch pattern scan where only the first result is stored for each UID.
+
+	This class extends BatchPatternsScanResults and adds additional functionality to store atomic bool values,
+
+	unique_ptr to PatternDesc and check if a specific pattern was found for a given UID.
+	*/
 	class BatchPatternsScanResultFirst : public BatchPatternsScanResults {
 	private:
 		std::unordered_map<std::string, std::atomic_bool> stoppedMap;
@@ -102,6 +153,12 @@ namespace ThunderByteScan {
 
 	public:
 
+		/**
+* @brief Returns a pointer to the atomic bool value stored for a given UID indicating whether the scan for that UID has been stopped or not.
+*
+* @param uid A string representing the UID for which the atomic bool value is requested.
+* @return A pointer to the atomic bool value for the given UID.
+*/
 		std::atomic_bool* getAtomicBoolStoppedFor(const std::string& uid)
 		{
 			if (stoppedMap.find(uid) == stoppedMap.end())
@@ -110,6 +167,12 @@ namespace ThunderByteScan {
 			return &(stoppedMap[uid]);
 		}
 
+		/**
+  * @brief Overloads the [] operator to return the first result for a given UID.
+  *
+  * @param uid A string representing the UID for which the first result is requested.
+  * @return The first result found for the given UID.
+  */
 		uintptr_t operator[] (const std::string& uid)
 		{
 			return getFirst(uid);
@@ -117,6 +180,12 @@ namespace ThunderByteScan {
 
 		// Null Ptr when not result
 
+		/**
+  * @brief Returns a pointer to the PatternDesc object stored for a given UID, describing the pattern who found the result(if any), or nullptr if no such object exists.
+  *
+  * @param uid A string representing the UID for which the PatternDesc object is requested.
+  * @return A pointer to the PatternDesc object for the given UID, or nullptr if no such object exists.
+  */
 		PatternDesc* getResultDescEx(const std::string& uid)
 		{
 			if (resultExMap.find(uid) == resultExMap.end())
@@ -125,16 +194,35 @@ namespace ThunderByteScan {
 			return resultExMap[uid].get();
 		}
 
+		/**
+ * @brief Stores a new PatternDesc object for a given UID Describing the pattern who found the result.
+ *
+ * @param _pattern A string representing the pattern used to find the result.
+ * @param _uid A string representing the UID for which the result was found.
+ */
 		void setResultDescEx(const std::string& _pattern, const std::string& _uid)
 		{
 			resultExMap[_uid] = std::make_unique<PatternDesc>(_pattern, _uid);
 		}
 
+		/**
+		 * @brief Stores a new PatternDesc object for a given UID Describing the pattern who found the result using information from a PatternTaskInfo where the result was found from.
+		 *
+		 * @param uid A string representing the UID for which the result was found.
+		 * @param from A PatternTaskInfo object containing information about the result found.
+		 */
 		void setResultDescExFrom(const std::string& uid, const PatternTaskInfo& from)
 		{
 			setResultDescEx(from.pattern, from.uid);
 		}
 
+		/**
+  * @brief Checks whether the result found for a given UID was found using a specific pattern.
+  *
+  * @param uid A string representing the UID for which the result was found.
+  * @param pattern A string representing the pattern used to find the result.
+  * @return True if the result for the given UID was found using the given pattern, false otherwise.
+  */
 		bool ResultWasFoundByPattern(const std::string& uid, const std::string& pattern)
 		{
 			PatternDesc* resultFoundByInfo = getResultDescEx(uid);
@@ -149,6 +237,15 @@ namespace ThunderByteScan {
 #ifdef USE_SSE2
 #include <emmintrin.h> // Include SSE2 intrinsics header
 
+	/**
+
+	@brief Compares two memory regions of a given size using SSE2 instructions and a mask.
+	@param ptr1 Pointer to the first memory region.
+	@param ptr2 Pointer to the second memory region.
+	@param num_bytes Size of the memory regions in bytes.
+	@param mask Mask array that specifies which bytes should be ignored during comparison.
+	@return true if the memory regions are equal, false otherwise.
+	*/
 	inline bool sse2_memcmp_with_mask(const void* ptr1, const void* ptr2, size_t num_bytes, unsigned char* mask)
 	{
 		// Cast input pointers to byte pointers
@@ -171,7 +268,7 @@ namespace ThunderByteScan {
 			// Perform mask comparison using SSE2 instructions
 			__m128i cmp = _mm_cmpeq_epi8(v1, v2);
 			cmp = _mm_or_si128(cmp, mask_v);
-			__m128i result = _mm_andnot_si128(cmp, _mm_set1_epi8(0xFF));
+			__m128i result = _mm_andnot_si128(cmp, _mm_set1_epi8((char)0xFF));
 
 			// Check if any byte is non-zero in the result register
 			if (_mm_movemask_epi8(result) != 0x0)
@@ -270,6 +367,18 @@ namespace ThunderByteScan {
 		} while (ss >> str);
 	}
 
+	/**
+
+	@brief Performs a pattern scan on a specific range of memory.
+
+	@param pattern A pointer to a PatternTaskInfo struct that holds information about the pattern to scan.
+
+	@param startAddr The starting address of the memory range to scan.
+
+	@param endAddr The ending address of the memory range to scan.
+
+	@param foundCallback A function to be called when a pattern is found. The function takes a PatternTaskInfo pointer and the address where the pattern was found as arguments and returns a boolean indicating whether to continue scanning or not.
+	*/
 	inline void LocalFindPatternInfoTask(PatternTaskInfo* pattern, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* _patternTaskInfo, uintptr_t _rslt)> foundCallback)
 	{
 		bool bAtLeastOneFound = false;
