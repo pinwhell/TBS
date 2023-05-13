@@ -74,25 +74,19 @@ void TestCaseScenarioMultiThreadedSimultaneousUncertainScan()
 
     /*
     
-    lets assume all of the next are the same, but diferent pattern, our goal is to find the {'1', '2', '3'}
+    lets assume all of the next are the same, but diferent pattern, our goal is to find the '1' not mattering from which pattern variant we got it from
     
     */
 
     // 6B 65 72 6E 65 6C 20 ? 20 6F 66 66 73 65 74 => kernel 1 offset 
-    // 6B 65 72 6E 65 6C 20 6F 66 66 73 65 74 20 ? => kernel offset 2
-    // ? 20 6F 66 66 73 65 74 20 6B 65 72 6E 65 6C => 3 offset kernel ...
+    // 6B 65 72 6E 65 6C 20 6F 66 66 73 65 74 20 ? => kernel offset 1
+    // ? 20 6F 66 66 73 65 74 20 6B 65 72 6E 65 6C => 1 offset kernel
 
     strcpy(kernelBuff + (size_t)std::round(KERN_BUFF_SIZE * 0.1), "kernel 1 offset");
 
     strcpy(kernelBuff + (size_t)std::round(KERN_BUFF_SIZE * 0.5), "kernel offset 1");
 
     strcpy(kernelBuff + (size_t)std::round(KERN_BUFF_SIZE * 0.8), "1 offset kernel");
-
-    /* 
-    Notice that it can be fuzzy some kernel version may contain multiple of the same pattern variation, for example
-    kernel1Buff contains
-    kernel 1 offset variation and kernel offset 2, our goal is to efficiently, find the 1, and stop when one of this two appear
-    */
 
     // Perform search on buffer
     ThunderByteScan::BatchPatternsScanResultFirst bpsrf;
@@ -109,13 +103,13 @@ void TestCaseScenarioMultiThreadedSimultaneousUncertainScan()
         }, (uintptr_t)kernelBuff, (uintptr_t)kernelBuff + KERN_BUFF_SIZE, bpsrf) << std::endl;
         );
 
-    // each of the three pattern is valid to found, the trick is that when one of the three is found, all the other ones with the same UID will be stoped, in this case
+    // each of the three pattern is valid to found, the trick is that when one of the three is found, all the other ones with the same UID will be stopped, in this case
     //  ThunderByteScan::PatternDesc("? 20 6F 66 66 73 65 74 20 6B 65 72 6E 65 6C", "offsetMemberX"), // 3 offset kernel, Was found first, so this way, we just stopped
     //         ThunderByteScan::PatternDesc("6B 65 72 6E 65 6C 20 ? 20 6F 66 66 73 65 74", "offsetMemberX"), // kernel 1 offset 
     // ThunderByteScan::PatternDesc("6B 65 72 6E 65 6C 20 6F 66 66 73 65 74 20 ?", "offsetMemberX"), // kernel offset 2
     // From Continue the search, avoiding unnecesary waiting
 
-    char* pResultBase = (char*)(bpsrf["offsetMemberX"]);
+    char* pResultBase = (char*)(bpsrf["offsetMemberX"]); // We dont care which pattern was the result for at this point, next we will handle that
 
     if (bpsrf.ResultWasFoundByPattern("offsetMemberX", "6B 65 72 6E 65 6C 20 ? 20 6F 66 66 73 65 74")) // Then offset is arround the middle from the base
         result = pResultBase[7]; // '1'
