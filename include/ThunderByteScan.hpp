@@ -6,10 +6,63 @@
 #include <unordered_map>
 #include <sstream>
 #include <memory>
-#include "ThreadPool.hpp"
+#include <thread>
 #include <unordered_set>
+#include <mutex>
+#include <queue>
 
 namespace ThunderByteScan {
+
+	class ThreadPool {
+	public:
+		inline ThreadPool(size_t threads = std::thread::hardware_concurrency()) : stop(false) 
+		{
+			auto workerTask = [this] {
+				for (;;) 
+				{
+					std::function<void()> task;
+					{
+						std::unique_lock<std::mutex> lock(this->queue_mutex);
+						this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
+						if (this->stop && this->tasks.empty())
+							return;
+						task = std::move(this->tasks.front());
+						this->tasks.pop();
+					}
+					task();
+				}
+			};
+
+			for (size_t i = 0; i < threads; ++i)
+				workers.emplace_back(workerTask);
+		}
+
+		template<class F, class... Args>
+		inline void enqueue(F&& f, Args&&... args) {
+			{
+				std::unique_lock<std::mutex> lock(queue_mutex);
+				tasks.emplace(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+			}
+			condition.notify_one();
+		}
+
+		inline ~ThreadPool() {
+			{
+				std::unique_lock<std::mutex> lock(queue_mutex);
+				stop = true;
+			}
+			condition.notify_all();
+			for (std::thread& worker : workers)
+				worker.join();
+		}
+
+	private:
+		std::vector<std::thread> workers;
+		std::queue<std::function<void()>> tasks;
+		std::mutex queue_mutex;
+		std::condition_variable condition;
+		bool stop;
+	};
 
 	/**
 
@@ -20,9 +73,35 @@ namespace ThunderByteScan {
 	class BatchPatternsScanResults {
 	private:
 		std::unordered_map<std::string, std::vector<uintptr_t>> mResults;
+		std::unordered_map<std::string, std::atomic_bool> stoppedMap;
 
 	public:
-		
+
+		/**
+* @brief Returns a pointer to the atomic bool value stored for a given UID indicating whether the scan for that UID has been stopped or not.
+*
+* @param uid A string representing the UID for which the atomic bool value is requested.
+* @return A pointer to the atomic bool value for the given UID.
+*/
+		std::atomic_bool* getAtomicBoolStoppedFor(const std::string& uid)
+		{
+			if (stoppedMap.find(uid) == stoppedMap.end())
+				stoppedMap[uid] = false;
+
+			return &(stoppedMap[uid]);
+		}
+
+/**
+* @brief Overloads the [] operator to return the first result for a given UID.
+*
+* @param uid A string representing the UID for which the first result is requested.
+* @return The first result found for the given UID.
+*/
+		uintptr_t operator[] (const std::string& uid)
+		{
+			return getFirst(uid);
+		}
+
 		/**
 * @brief Returns the first result of a specified scan.
 *
@@ -101,19 +180,19 @@ namespace ThunderByteScan {
 
 	struct PatternTaskInfo {
 		PatternTaskInfo()
-			: atomStopped(nullptr)
+			: mpStopped(nullptr)
 		{}
 
-		bool reportResults = true;
-		std::vector<unsigned char> rawMask;
-		std::vector<unsigned char> ignoreMask;
-		std::string uid;
-		std::string pattern;
-		size_t patternSize;
-		bool foundAtLeastOne = false;
+		bool mReportResults = true;
+		std::vector<unsigned char> mMatchMask;
+		std::vector<unsigned char> mIgnoreMask;
+		std::string mUID;
+		std::string mPattern;
+		size_t mPatternSize;
+		bool mFound = false;
 
 		// it will hold the atomic boolean that will decide if alredy found uid (used in find first)
-		std::atomic_bool* atomStopped;
+		std::atomic_bool* mpStopped;
 	};
 
 	struct PatternDesc {
@@ -127,13 +206,14 @@ namespace ThunderByteScan {
 		{}
 
 		PatternDesc(const std::string& _pattern, const std::string& _uid)
-			: pattern(_pattern)
-			, uid(_uid)
+			: mPattern(_pattern)
+			, mUID(_uid)
+			, mpStopped(nullptr)
 		{}
 
-		std::string pattern;
-		std::string uid;
-		std::atomic_bool* atomStopped;
+		std::string mPattern;
+		std::string mUID;
+		std::atomic_bool* mpStopped;
 	};
 
 	/**
@@ -148,37 +228,10 @@ namespace ThunderByteScan {
 	*/
 	class BatchPatternsScanResultFirst : public BatchPatternsScanResults {
 	private:
-		std::unordered_map<std::string, std::atomic_bool> stoppedMap;
 		std::unordered_map<std::string, std::unique_ptr<PatternDesc>> resultExMap;
 
 	public:
 
-		/**
-* @brief Returns a pointer to the atomic bool value stored for a given UID indicating whether the scan for that UID has been stopped or not.
-*
-* @param uid A string representing the UID for which the atomic bool value is requested.
-* @return A pointer to the atomic bool value for the given UID.
-*/
-		std::atomic_bool* getAtomicBoolStoppedFor(const std::string& uid)
-		{
-			if (stoppedMap.find(uid) == stoppedMap.end())
-				stoppedMap[uid] = false;
-
-			return &(stoppedMap[uid]);
-		}
-
-		/**
-  * @brief Overloads the [] operator to return the first result for a given UID.
-  *
-  * @param uid A string representing the UID for which the first result is requested.
-  * @return The first result found for the given UID.
-  */
-		uintptr_t operator[] (const std::string& uid)
-		{
-			return getFirst(uid);
-		}
-
-		// Null Ptr when not result
 
 		/**
   * @brief Returns a pointer to the PatternDesc object stored for a given UID, describing the pattern who found the result(if any), or nullptr if no such object exists.
@@ -213,7 +266,7 @@ namespace ThunderByteScan {
 		 */
 		void setResultDescExFrom(const std::string& uid, const PatternTaskInfo& from)
 		{
-			setResultDescEx(from.pattern, from.uid);
+			setResultDescEx(from.mPattern, from.mUID);
 		}
 
 		/**
@@ -230,7 +283,7 @@ namespace ThunderByteScan {
 			if (resultFoundByInfo == nullptr)
 				return false;
 
-			return resultFoundByInfo->pattern == pattern;
+			return resultFoundByInfo->mPattern == pattern;
 		}
 	};
 
@@ -313,7 +366,7 @@ namespace ThunderByteScan {
 	@param mask A pointer to an array of bytes indicating which bytes to compare and which to ignore.
 	@return A boolean value indicating whether the memory blocks match or not according to the mask.
 	*/
-    inline bool fast_memcmp_with_mask(const void* ptr1, const void* ptr2, size_t num_bytes, unsigned char* mask) {
+	inline bool fast_memcmp_with_mask(const void* ptr1, const void* ptr2, size_t num_bytes, unsigned char* mask) {
 
 #ifdef USE_SSE2
 		return sse2_memcmp_with_mask(ptr1, ptr2, num_bytes, mask);
@@ -331,16 +384,16 @@ namespace ThunderByteScan {
 			}
 		}
 		return true;
-    }
+	}
 
-	/**      
+	/**
 	@brief Parses a pattern string to generate a rawMask and an ignoreMask vectors.
 
-	@param pattern A string containing a pattern to parse.      
-	@param rawMask A vector of unsigned chars to be filled with the raw values extracted from the pattern.      
-	@param ignoreMask A vector of unsigned chars to be filled with the same values as rawMask but with all bits set to 1 in the positions where there is a value in rawMask. 
+	@param pattern A string containing a pattern to parse.
+	@param rawMask A vector of unsigned chars to be filled with the raw values extracted from the pattern.
+	@param ignoreMask A vector of unsigned chars to be filled with the same values as rawMask but with all bits set to 1 in the positions where there is a value in rawMask.
 
-	@return void    
+	@return void
 	*/
 	inline void ParsePattern(const std::string& pattern, std::vector<unsigned char>& rawMask, std::vector<unsigned char>& ignoreMask)
 	{
@@ -386,74 +439,107 @@ namespace ThunderByteScan {
 		if (startAddr == 0 || endAddr == 0 || startAddr >= endAddr)
 			return;
 
-		for (size_t i = startAddr; i <= (endAddr - pattern->patternSize) && pattern->reportResults; i++)
+		for (size_t i = startAddr; i <= (endAddr - pattern->mPatternSize) && pattern->mReportResults; i++)
 		{
-			if (pattern->atomStopped && (*pattern->atomStopped) == true)
+			if (pattern->mpStopped && (*pattern->mpStopped) == true)
 				break;
 
-			if (fast_memcmp_with_mask(pattern->rawMask.data(), (unsigned char*)i, (size_t)pattern->patternSize, pattern->ignoreMask.data()))
-			{
-				pattern->foundAtLeastOne = true;
-				pattern->reportResults = foundCallback(pattern, (uintptr_t)i);
-			}
+			if (fast_memcmp_with_mask(pattern->mMatchMask.data(), (unsigned char*)i,
+				(size_t)pattern->mPatternSize,
+				pattern->mIgnoreMask.data()) == false)
+				continue;
+
+			pattern->mFound = true;
+			
+			if ((pattern->mReportResults = foundCallback(pattern, (uintptr_t)i)) == false)
+				break;
 		}
 	}
 
 
-/**
-Searches for multiple patterns within the specified memory range and calls a callback function for each found occurrence.
+	/**
+	Searches for multiple patterns within the specified memory range and calls a callback function for each found occurrence.
 
-@param patterns A vector of unique ptrs of PatternInfo representing the information patterns to search for.
-@param startAddr The starting address of the memory range to search within.
-@param endAddr The ending address of the memory range to search within.
-@param foundCallback A callback function that is called for each occurrence of a pattern found. The function should have the signature "bool func(const std::string& patt, uintptr_t addr)", where "patt" is the name of the pattern found(pattern itself usually) and "addr" is the address of the found pattern.
+	@param patterns A vector of unique ptrs of PatternInfo representing the information patterns to search for.
+	@param startAddr The starting address of the memory range to search within.
+	@param endAddr The ending address of the memory range to search within.
+	@param foundCallback A callback function that is called for each occurrence of a pattern found. The function should have the signature "bool func(const std::string& patt, uintptr_t addr)", where "patt" is the name of the pattern found(pattern itself usually) and "addr" is the address of the found pattern.
 
-@return Returns true if the search was successful, false otherwise.
+	@return Returns true if every single pattern uid did found a result, false otherwise.
 
-@remarks The function assumes that the memory addresses being searched are valid and accessible.
+	@remarks The function assumes that the memory addresses being searched are valid and accessible.
 
-@see fast_memcmp_with_mask, ParsePattern
+	@see fast_memcmp_with_mask, ParsePattern
 
-*/
+	*/
 	inline bool LocalFindPatternBatch(const std::vector<PatternTaskInfo*>& patterns, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* patternTaskInfo, uintptr_t rslt)> foundCallback)
 	{
-		bool bResult = true;
-
 		{
 			ThreadPool pattsTp;
 
 			for (PatternTaskInfo* patternInfo : patterns)
 			{
+				// Lets Delegate the Pattern Scan
+
 				pattsTp.enqueue([&](PatternTaskInfo* pattInf, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* _patternTaskInfo, uintptr_t _rslt)> foundCallback) {
 
 					LocalFindPatternInfoTask(pattInf, startAddr, endAddr, foundCallback);
 
-					}, patternInfo, startAddr, endAddr, foundCallback);
+				}, patternInfo, startAddr, endAddr, foundCallback);
 			}
 		}
+
+		// At this point, all the pattern scan tasks
+		// finished doing its work!
 
 		std::unordered_set<std::string> uidFoundAtLeastOne;
-		std::vector<PatternTaskInfo*> sortedInfos = patterns;
-		std::sort(sortedInfos.begin(), sortedInfos.end(), [&](PatternTaskInfo* toSort1, PatternTaskInfo* toSort2) {
-			return toSort1->foundAtLeastOne > toSort2->foundAtLeastOne;
+		std::vector<PatternTaskInfo*> foundSorted = patterns;
+
+		std::sort(foundSorted.begin(), foundSorted.end(), [&](PatternTaskInfo* toSort1, PatternTaskInfo* toSort2) {
+			return toSort1->mFound > toSort2->mFound;
 			});
 
-		for (PatternTaskInfo* pCurr : sortedInfos)
-		{
-			// That Means another pattern, with same uid, found a result, so that means this pattern also is done
-			if (uidFoundAtLeastOne.find(pCurr->uid) != uidFoundAtLeastOne.end())
-				continue;
+		// sorting foundSorted on the criteria of found first
+		// so the process of searching the UIDs with alredy a result is simpler
 
-			if (pCurr->foundAtLeastOne == false)
+		for (PatternTaskInfo* currPatternTaskInfo : foundSorted)
+		{
+			if (uidFoundAtLeastOne.find(currPatternTaskInfo->mUID) != uidFoundAtLeastOne.end())
 			{
-				bResult = false;
-				break;
+				// At this point, another pattern 
+				// with same UID found a result
+				// meaning that this Pattern Task Info with 
+				// same UID should be ingnored
+
+				continue;
 			}
 
-			uidFoundAtLeastOne.insert(pCurr->uid);
+			// At this point, currPatternTaskInfo 
+			// UID was not found yet
+				
+			if (currPatternTaskInfo->mFound == false)
+			{
+				// At this point, we know that at least 1 or more 
+				// pattern from the batch didnt found its results
+				// Lets notify to the caller, so caller can re-call
+				// again with cache and potentially find results else-where
+				// in another memory range
+
+				return false;
+			}
+
+			// At this point, this currPatternTaskInfo was indeed found!, 
+			// and its other pattern task friends with same UID wont need 
+			// to find/work/worry anymore, lets add it to the ignore list
+
+			uidFoundAtLeastOne.insert(currPatternTaskInfo->mUID);
 		}
 
-		return bResult;
+		// At this point, seems that all Patterns UIDs were 
+		// satisfied with a corresponding result
+		// Lets report to the caller
+
+		return true;
 	}
 
 
@@ -475,7 +561,6 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	*/
 	inline bool LocalFindPatternBatch(const std::vector<PatternDesc>& patterns, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* patternTaskInfo, uintptr_t rslt)> foundCallback)
 	{
-		bool bAtLeastOneFound = false;
 
 		if (startAddr == 0 || endAddr == 0 || startAddr >= endAddr)
 			return false;
@@ -484,19 +569,18 @@ Searches for multiple patterns within the specified memory range and calls a cal
 
 		for (size_t i = 0; i < patterns.size(); i++)
 		{
-			std::unique_ptr<PatternTaskInfo> currPi = std::make_unique<PatternTaskInfo>();
+			allPatternsInfo.emplace_back(std::make_unique<PatternTaskInfo>());
+			PatternTaskInfo& currPatternTaskInf = *allPatternsInfo.back();
 
-			currPi->ignoreMask = std::vector<unsigned char>();
-			currPi->rawMask = std::vector<unsigned char>();
-			currPi->uid = patterns[i].uid;
-			currPi->atomStopped = patterns[i].atomStopped;
-			currPi->pattern = patterns[i].pattern;
+			currPatternTaskInf.mUID			= patterns[i].mUID;
+			currPatternTaskInf.mPattern		= patterns[i].mPattern;
+			currPatternTaskInf.mpStopped	= patterns[i].mpStopped;
+			currPatternTaskInf.mMatchMask	= std::vector<unsigned char>();
+			currPatternTaskInf.mIgnoreMask	= std::vector<unsigned char>();
 
-			ParsePattern(currPi->pattern, currPi->rawMask, currPi->ignoreMask);
+			ParsePattern(currPatternTaskInf.mPattern, currPatternTaskInf.mMatchMask, currPatternTaskInf.mIgnoreMask);
 
-			currPi->patternSize = currPi->rawMask.size();
-
-			allPatternsInfo.push_back(std::move(currPi));
+			currPatternTaskInf.mPatternSize = currPatternTaskInf.mMatchMask.size();
 		}
 
 		std::vector<ThunderByteScan::PatternTaskInfo*> allPatternsInfop;
@@ -504,15 +588,18 @@ Searches for multiple patterns within the specified memory range and calls a cal
 		for (auto& curr : allPatternsInfo)
 			allPatternsInfop.push_back(curr.get());
 
-		bAtLeastOneFound = LocalFindPatternBatch(allPatternsInfop, startAddr, endAddr, foundCallback);
+		bool bFoundAll = LocalFindPatternBatch(allPatternsInfop, startAddr, endAddr, foundCallback);
 
-		for (auto& currPatInf : allPatternsInfo)
+		for (auto& currentPatternInfo : allPatternsInfo)
 		{
-			memset(currPatInf->rawMask.data(), 0x0, currPatInf->rawMask.size());
-			memset(currPatInf->ignoreMask.data(), 0x0, currPatInf->ignoreMask.size());
+			// Erasing, so next scan with similar patterns, 
+			// dont find this garbage patterns as a result
+
+			memset(currentPatternInfo->mMatchMask.data(), 0x0, currentPatternInfo->mPatternSize);
+			memset(currentPatternInfo->mIgnoreMask.data(), 0x0, currentPatternInfo->mPatternSize);
 		}
 
-		return bAtLeastOneFound;
+		return bFoundAll;
 	}
 
 	/**
@@ -526,7 +613,9 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	*/
 	inline bool LocalFindPattern(const std::string& pattern, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(uintptr_t addr)> foundCallback)
 	{
-		return LocalFindPatternBatch({ pattern }, startAddr, endAddr, [&](PatternTaskInfo* pattTaskInf, uintptr_t result) {
+		std::vector<ThunderByteScan::PatternDesc> pattDesc{ pattern };
+
+		return LocalFindPatternBatch(pattDesc, startAddr, endAddr, [&](PatternTaskInfo* pattTaskInf, uintptr_t result) {
 
 			return foundCallback(result);
 
@@ -548,10 +637,10 @@ Searches for multiple patterns within the specified memory range and calls a cal
 
 			results.push_back(addrFound);
 
-		return true;
+			return true;
 			});
 	}
-	
+
 	/**
 
 	Searches for the first occurrence of a pattern in the given memory range.
@@ -569,7 +658,7 @@ Searches for multiple patterns within the specified memory range and calls a cal
 
 			result = addrFound;
 
-		return false;
+			return false;
 			});
 	}
 
@@ -588,37 +677,46 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	inline bool LocalFindPatternBatchFirst(const std::vector<PatternDesc>& _patterns, uintptr_t startAddr, uintptr_t endAddr, BatchPatternsScanResultFirst& results)
 	{
 		std::vector<PatternDesc> patterns = _patterns;	// Copy of all patterns
-														// So we can modify the array
+		// So we can modify the array
 		std::unordered_set<std::string> toRemove;
 
-		for (auto& pattDesc : patterns)
+		for (auto& patternDesc : patterns)
 		{
-			pattDesc.atomStopped = results.getAtomicBoolStoppedFor(pattDesc.uid);
+			patternDesc.mpStopped = results.getAtomicBoolStoppedFor(patternDesc.mUID);
 
-			if (results.HasResult(pattDesc.uid, true)) // If Result is zero, we will override
-					toRemove.insert(pattDesc.uid);
-			else 
-				results.setFirst(pattDesc.uid, 0);
+			if (results.HasResult(patternDesc.mUID, true)) // If Result is zero, we will override
+				toRemove.insert(patternDesc.mUID);
+			else
+				results.setFirst(patternDesc.mUID, 0);
 		}
 
 		// Removing the ones who alredy have a result
 		// We dont want to overwrite the cache
 		patterns.erase(std::remove_if(patterns.begin(), patterns.end(), [&](const PatternDesc& pattDesc) {
-			return toRemove.count(pattDesc.uid) > 0;
+			return toRemove.count(pattDesc.mUID) > 0;
 			}), patterns.end());
 
 		return LocalFindPatternBatch(patterns, startAddr, endAddr, [&](PatternTaskInfo* patternTaskInfo, uintptr_t rslt) {
+			// At this point, this callback was called 
+			// becouse a result for patternTaskInfo was found
 
-		// Checking if alredy stopped
-		if (*(patternTaskInfo->atomStopped) == true)
+			if (results.HasResult(patternTaskInfo->mUID) == true)
+			{
+				// Seems we alredy found it, we dont care about another result
+				// lets simply ignore it
+
+				return false;
+			}
+
+			// at this point, a result for patternTaskInfo
+			// was found, and it wasnt saved, lets save it
+
+			results.setFirst(patternTaskInfo->mUID, rslt);
+			results.setResultDescExFrom(patternTaskInfo->mUID, (*patternTaskInfo));
+
+			// Since finding just first ocurrences, 
+			// we dont want to find anymore
 			return false;
-
-		*(patternTaskInfo->atomStopped) = true; // Now stopping it, since we found result
-
-		results.setFirst(patternTaskInfo->uid, rslt);
-		results.setResultDescExFrom(patternTaskInfo->uid, (*patternTaskInfo));
-
-		return false;
 			});
 	}
 
@@ -632,14 +730,34 @@ Searches for multiple patterns within the specified memory range and calls a cal
 	@return True if the search was successful, false otherwise.
 
 	*/
-	inline bool LocalFindPatternBatch(const std::vector<PatternDesc>& patterns, uintptr_t startAddr, uintptr_t endAddr, BatchPatternsScanResults& results)
+	inline bool LocalFindPatternBatch(const std::vector<PatternDesc>& _patterns, uintptr_t startAddr, uintptr_t endAddr, BatchPatternsScanResults& results)
 	{
+		std::vector<PatternDesc> patterns = _patterns;
+
+		for (PatternDesc& pd : patterns)
+			pd.mpStopped = results.getAtomicBoolStoppedFor(pd.mUID);
+
 		return LocalFindPatternBatch(patterns, startAddr, endAddr, [&](PatternTaskInfo* patternTaskInfo, uintptr_t rslt) {
-			results.getResults(patternTaskInfo->uid).emplace_back(rslt);
-		return true;
+			results.getResults(patternTaskInfo->mUID).emplace_back(rslt);
+			return true;
 			});
 	}
+
+	template<typename T>
+	uintptr_t VecStart(const std::vector<T>& vec)
+	{
+		if (vec.size() < 1)
+			return 0x0;
+
+		return (uintptr_t)vec.data();
+	}
+
+	template<typename T>
+	uintptr_t VecEnd(const std::vector<T>& vec)
+	{
+		if (vec.size() < 1)
+			return 0x0;
+
+		return (uintptr_t)(vec.data() + vec.size());
+	}
 }
-
-
-
