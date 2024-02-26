@@ -54,8 +54,8 @@ TEST_CASE("Batch Pattern Search Test")
 {
     TBS::BatchPatternsScanResults results;
     std::vector<TBS::PatternDesc> testCase = {
-            {"55 89 ? B8 ? ? ? ? 83 ? ? 83 ? ? BB", "X86PatternTag"},
-            {"55 89 ? 83 ? ? BB ? ? ? ? 83 ? ? B8", "X86PatternTag"},
+            {"55 89 ? B8 ? ? ? ? 83 ? ? 83 ? ? BB", "X86PatternTag", [](uint64_t result) { return *(uint32_t*)(result + 4); }},
+            {"55 89 ? 83 ? ? BB ? ? ? ? 83 ? ? B8", "X86PatternTag", [](uint64_t result) { return *(uint8_t*)(result + 5); }},
             "F7 ? 5D C3"
     };
 
@@ -70,7 +70,7 @@ TEST_CASE("Batch Pattern Search Test")
 
     CHECK(results.HasResult("X86PatternTag"));
     CHECK(results.HasResult("F7 ? 5D C3"));
-    CHECK(*(uint8_t*)(results["X86PatternTag"] + 3) == 0xB8);
+    CHECK(results["X86PatternTag"] == 42);
 
     // Now with second sample
 
@@ -87,7 +87,7 @@ TEST_CASE("Batch Pattern Search Test")
 
     CHECK(results.HasResult("X86PatternTag"));
     CHECK(results.HasResult("F7 ? 5D C3"));
-    CHECK(*(uint8_t*)(results["X86PatternTag"] + 3) == 0x83);
+    CHECK(results["X86PatternTag"] == 8);
 }
 
 TEST_CASE("Test Find Pattern")

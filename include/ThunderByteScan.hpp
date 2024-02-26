@@ -74,7 +74,6 @@ namespace ThunderByteScan {
 	private:
 		std::unordered_map<std::string, std::vector<uintptr_t>> mResults;
 		std::unordered_map<std::string, std::atomic_bool> stoppedMap;
-
 	public:
 
 		/**
@@ -188,6 +187,7 @@ namespace ThunderByteScan {
 		std::vector<unsigned char> mIgnoreMask;
 		std::string mUID;
 		std::string mPattern;
+		std::function<uint64_t(uint64_t)> mResolveCallback;
 		size_t mPatternSize;
 		bool mFound = false;
 
@@ -197,23 +197,37 @@ namespace ThunderByteScan {
 
 	struct PatternDesc {
 
+		PatternDesc(const char* _pattern, std::function<uint64_t(uint64_t)> resolveCallback)
+			: PatternDesc(_pattern, _pattern, resolveCallback) // Using the pattern as UID
+		{}
+
+		PatternDesc(const std::string& _pattern, std::function<uint64_t(uint64_t)> resolveCallback)
+			: PatternDesc(_pattern, _pattern, resolveCallback) // Using the pattern as UID
+		{}
+
 		PatternDesc(const char* _pattern)
-			: PatternDesc(_pattern, _pattern) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const std::string& _pattern)
-			: PatternDesc(_pattern, _pattern) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const std::string& _pattern, const std::string& _uid)
+			: PatternDesc(_pattern, _uid, 0)
+		{}
+
+		PatternDesc(const std::string& _pattern, const std::string& _uid, std::function<uint64_t(uint64_t)> resolveCallback)
 			: mPattern(_pattern)
 			, mUID(_uid)
 			, mpStopped(nullptr)
+			, mResolve(resolveCallback)
 		{}
 
 		std::string mPattern;
 		std::string mUID;
 		std::atomic_bool* mpStopped;
+		std::function<uint64_t(uint64_t)> mResolve;
 	};
 
 	/**
@@ -577,6 +591,7 @@ namespace ThunderByteScan {
 			currPatternTaskInf.mpStopped	= patterns[i].mpStopped;
 			currPatternTaskInf.mMatchMask	= std::vector<unsigned char>();
 			currPatternTaskInf.mIgnoreMask	= std::vector<unsigned char>();
+			currPatternTaskInf.mResolveCallback = patterns[i].mResolve;
 
 			ParsePattern(currPatternTaskInf.mPattern, currPatternTaskInf.mMatchMask, currPatternTaskInf.mIgnoreMask);
 
@@ -709,7 +724,10 @@ namespace ThunderByteScan {
 			}
 
 			// at this point, a result for patternTaskInfo
-			// was found, and it wasnt saved, lets save it
+			// was found, and it wasnt saved, lets call the callback to resolve it(if any) and save it
+
+			if (patternTaskInfo->mResolveCallback)
+				rslt = patternTaskInfo->mResolveCallback(rslt);
 
 			results.setFirst(patternTaskInfo->mUID, rslt);
 			results.setResultDescExFrom(patternTaskInfo->mUID, (*patternTaskInfo));
@@ -738,6 +756,9 @@ namespace ThunderByteScan {
 			pd.mpStopped = results.getAtomicBoolStoppedFor(pd.mUID);
 
 		return LocalFindPatternBatch(patterns, startAddr, endAddr, [&](PatternTaskInfo* patternTaskInfo, uintptr_t rslt) {
+			if (patternTaskInfo->mResolveCallback)
+				rslt = patternTaskInfo->mResolveCallback(rslt);
+
 			results.getResults(patternTaskInfo->mUID).emplace_back(rslt);
 			return true;
 			});
