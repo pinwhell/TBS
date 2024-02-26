@@ -10,6 +10,10 @@
 #include <unordered_set>
 #include <mutex>
 #include <queue>
+#include <condition_variable>
+#include <atomic>
+#include <algorithm>
+#include <string.h>
 
 namespace ThunderByteScan {
 

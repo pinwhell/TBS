@@ -11,7 +11,7 @@ option(TBS_TESTS "Thunder Byte Scan with Tests" ${MAIN_PROJECT})
 
 add_library(ThunderByteScan INTERFACE)
 
-target_include_directories(ThunderByteScan INTERFACE include)
+target_include_directories(ThunderByteScan INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(TBS_TESTS)
 	add_subdirectory(tests)
