@@ -15,8 +15,16 @@
 #include <algorithm>
 #include <string.h>
 
-namespace ThunderByteScan {
+// Multi-threading enabled by default
 
+#define TBS_MT
+
+#ifdef TBS_NO_MT
+#undef TBS_MT
+#endif
+
+namespace ThunderByteScan {
+#ifdef TBS_MT
 	class ThreadPool {
 	public:
 		inline ThreadPool(size_t threads = std::thread::hardware_concurrency()) : stop(false) 
@@ -67,6 +75,8 @@ namespace ThunderByteScan {
 		std::condition_variable condition;
 		bool stop;
 	};
+
+#endif
 
 	/**
 
@@ -184,6 +194,8 @@ namespace ThunderByteScan {
 	struct PatternTaskInfo {
 		PatternTaskInfo()
 			: mpStopped(nullptr)
+			, mStartFind(0)
+			, mEndFind(0)
 		{}
 
 		bool mReportResults = true;
@@ -194,6 +206,8 @@ namespace ThunderByteScan {
 		std::function<uint64_t(uint64_t)> mResolveCallback;
 		size_t mPatternSize;
 		bool mFound = false;
+		uint64_t mStartFind;
+		uint64_t mEndFind;
 
 		// it will hold the atomic boolean that will decide if alredy found uid (used in find first)
 		std::atomic_bool* mpStopped;
@@ -202,36 +216,109 @@ namespace ThunderByteScan {
 	struct PatternDesc {
 
 		PatternDesc(const char* _pattern, std::function<uint64_t(uint64_t)> resolveCallback)
-			: PatternDesc(_pattern, _pattern, resolveCallback) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, resolveCallback, 0, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const std::string& _pattern, std::function<uint64_t(uint64_t)> resolveCallback)
-			: PatternDesc(_pattern, _pattern, resolveCallback) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, resolveCallback, 0, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const char* _pattern)
-			: PatternDesc(_pattern, _pattern, 0) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, 0, 0, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const std::string& _pattern)
-			: PatternDesc(_pattern, _pattern, 0) // Using the pattern as UID
+			: PatternDesc(_pattern, _pattern, 0, 0, 0) // Using the pattern as UID
 		{}
 
 		PatternDesc(const std::string& _pattern, const std::string& _uid)
-			: PatternDesc(_pattern, _uid, 0)
+			: PatternDesc(_pattern, _uid, 0, 0, 0)
 		{}
 
 		PatternDesc(const std::string& _pattern, const std::string& _uid, std::function<uint64_t(uint64_t)> resolveCallback)
+			: PatternDesc(_pattern, _uid, resolveCallback, 0, 0)
+		{}
+
+		PatternDesc(const std::string& _pattern, const std::string& _uid, std::function<uint64_t(uint64_t)> resolveCallback, uint64_t startFind, uint64_t endFind)
 			: mPattern(_pattern)
 			, mUID(_uid)
 			, mpStopped(nullptr)
 			, mResolve(resolveCallback)
+			, mStartFind(startFind)
+			, mEndFind(endFind)
 		{}
 
 		std::string mPattern;
 		std::string mUID;
 		std::atomic_bool* mpStopped;
 		std::function<uint64_t(uint64_t)> mResolve;
+		uint64_t mStartFind;
+		uint64_t mEndFind;
+	};
+
+	struct PatternDescBuilder {
+		inline PatternDescBuilder() 
+			: mPattern("")
+			, mUID("")
+			, mResolve(0)
+			, mStartFind(0)
+			, mEndFind(0)
+		{}
+
+		inline PatternDescBuilder& setPattern(const std::string& pattern)
+		{
+			mPattern = pattern;
+
+			if (mUID.empty())
+				mUID = pattern;
+
+			return *this;
+		}
+
+		inline PatternDescBuilder& setUID(const std::string& uid)
+		{
+			mUID = uid;
+
+			return *this;
+		}
+
+		inline PatternDescBuilder& setResolveCallback(std::function<uint64_t(uint64_t)> callback)
+		{
+			mResolve = callback;
+
+			return *this;
+		}
+
+		template<typename T>
+		inline PatternDescBuilder& setStartFind(T startFind)
+		{
+			mStartFind = (uint64_t)startFind;
+
+			return *this;
+		}
+
+		template<typename T>
+		inline PatternDescBuilder& setEndFind(T endFind)
+		{
+			mEndFind = (uint64_t)endFind;
+
+			return *this;
+		}
+
+		inline PatternDesc Build()
+		{
+			PatternDesc result(mPattern, mUID, mResolve, mStartFind, mEndFind);
+
+			*this = PatternDescBuilder();
+
+			return result;
+		}
+
+		std::string mPattern;
+		std::string mUID;
+		std::function<uint64_t(uint64_t)> mResolve;
+		uint64_t mStartFind;
+		uint64_t mEndFind;
 	};
 
 	/**
@@ -490,20 +577,24 @@ namespace ThunderByteScan {
 	@see fast_memcmp_with_mask, ParsePattern
 
 	*/
-	inline bool LocalFindPatternBatch(const std::vector<PatternTaskInfo*>& patterns, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* patternTaskInfo, uintptr_t rslt)> foundCallback)
+	inline bool LocalFindPatternBatch(const std::vector<PatternTaskInfo*>& patterns, std::function<bool(PatternTaskInfo* patternTaskInfo, uintptr_t rslt)> foundCallback)
 	{
 		{
+#ifdef TBS_MT
 			ThreadPool pattsTp;
+#endif
 
 			for (PatternTaskInfo* patternInfo : patterns)
 			{
+#ifdef TBS_MT
 				// Lets Delegate the Pattern Scan
+				pattsTp.enqueue([&](PatternTaskInfo* patternInfo, std::function<bool(PatternTaskInfo* _patternTaskInfo, uintptr_t _rslt)> foundCallback) {
+#endif
+					LocalFindPatternInfoTask(patternInfo, patternInfo->mStartFind, patternInfo->mEndFind, foundCallback);
 
-				pattsTp.enqueue([&](PatternTaskInfo* pattInf, uintptr_t startAddr, uintptr_t endAddr, std::function<bool(PatternTaskInfo* _patternTaskInfo, uintptr_t _rslt)> foundCallback) {
-
-					LocalFindPatternInfoTask(pattInf, startAddr, endAddr, foundCallback);
-
-				}, patternInfo, startAddr, endAddr, foundCallback);
+#ifdef TBS_MT
+				}, patternInfo, foundCallback);
+#endif
 			}
 		}
 
@@ -595,6 +686,8 @@ namespace ThunderByteScan {
 			currPatternTaskInf.mpStopped	= patterns[i].mpStopped;
 			currPatternTaskInf.mMatchMask	= std::vector<unsigned char>();
 			currPatternTaskInf.mIgnoreMask	= std::vector<unsigned char>();
+			currPatternTaskInf.mStartFind	= patterns[i].mStartFind == 0 ? startAddr : patterns[i].mStartFind;
+			currPatternTaskInf.mEndFind		= patterns[i].mEndFind == 0 ? endAddr : patterns[i].mEndFind;
 			currPatternTaskInf.mResolveCallback = patterns[i].mResolve;
 
 			ParsePattern(currPatternTaskInf.mPattern, currPatternTaskInf.mMatchMask, currPatternTaskInf.mIgnoreMask);
@@ -607,7 +700,7 @@ namespace ThunderByteScan {
 		for (auto& curr : allPatternsInfo)
 			allPatternsInfop.push_back(curr.get());
 
-		bool bFoundAll = LocalFindPatternBatch(allPatternsInfop, startAddr, endAddr, foundCallback);
+		bool bFoundAll = LocalFindPatternBatch(allPatternsInfop, foundCallback);
 
 		for (auto& currentPatternInfo : allPatternsInfo)
 		{
