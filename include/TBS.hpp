@@ -193,7 +193,7 @@ namespace TBS {
 				if (str.size() > 2)
 					return false;
 
-				// At this point, pattern structure good so far
+				// At this point, current pattern byte structure good so far
 
 				bool bAnyWildCard = str.find("?") != std::string::npos;
 
@@ -244,8 +244,6 @@ namespace TBS {
 			return Parse(pattern, res) && res;
 		}
 
-		struct Description;
-
 		enum class EScan {
 			SCAN_ALL,
 			SCAN_FIRST
@@ -280,6 +278,7 @@ namespace TBS {
 				Shared(EScan scanType)
 					: mScanType(scanType)
 					, mResultAccesor(*this)
+					, mFinished(false)
 				{}
 
 #ifdef TBS_MT
@@ -427,12 +426,7 @@ namespace TBS {
 				return *this;
 			}
 
-			DescriptionBuilder& EnableScanFirst()
-			{
-				return setScanType(EScan::SCAN_FIRST);
-			}
-
-			DescriptionBuilder& EnableScanAll()
+			DescriptionBuilder& stopOnFirstMatch()
 			{
 				return setScanType(EScan::SCAN_FIRST);
 			}
@@ -511,29 +505,27 @@ namespace TBS {
 
 	bool Scan(State& state)
 	{
-		bool bAllFoundAny = true;
-
-#ifdef TBS_MT
-	{
-		Thread::Pool threadPool;
-#endif
-		for (Pattern::Description& description : state.mDescriptionts)
 		{
 #ifdef TBS_MT
-			threadPool.enqueue(
-			[&](Pattern::Description& description)
+			Thread::Pool threadPool;
+#endif
+			for (Pattern::Description& description : state.mDescriptionts)
 			{
-#endif
+#ifdef TBS_MT
+				threadPool.enqueue(
+				[&](Pattern::Description& description)
+				{
+					Pattern::Scan(description);
+				}, description);
+#else
 				Pattern::Scan(description);
-
-#ifdef TBS_MT
-			}, description);
 #endif
+			}
 		}
-#ifdef TBS_MT
-	}
-#endif
+
 		state.mDescriptionts.clear();
+
+		bool bAllFoundAny = true;
 
 		for (auto& sharedDescKv : state.mSharedDescriptions)
 			bAllFoundAny = bAllFoundAny && sharedDescKv.second->mResult.empty() == false;

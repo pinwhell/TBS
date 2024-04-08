@@ -28,10 +28,6 @@ endif()
 
 target_include_directories(TBS INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if(NOT TBS_MT)
-    target_compile_definitions(TBS INTERFACE TBS_NO_MT)
-endif()
-
 if(TBS_TESTS)
 	add_subdirectory(tests)
 endif()

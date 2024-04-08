@@ -245,12 +245,12 @@ TEST_CASE("Pattern Scan #2")
 	*(size_t*)(buffer1 + strRelOff1) = strOff1 - strRelOff1;
 	*(size_t*)(buffer2 + strRelOff2) = strOff2 - strRelOff2;
 
-	State state;
+	State state{};
 	{
 		auto builder = state
 			.PatternBuilder()
 			.setUID("String")
-			.EnableScanFirst();
+			.stopOnFirstMatch();
 
 		state.AddPattern(
 			builder
