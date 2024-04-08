@@ -88,84 +88,6 @@ inline bool MemoryCompareWithMaskByteByte(const UByte* chunk1, const UByte* chun
 	return true;
 }
 
-TEST_CASE("Benchmark MemoryCompares")
-{
-	// Define the size of the chunk
-	constexpr size_t chunkSize = 1000; // a thousand bytes
-	constexpr size_t iterations = 5000;
-	constexpr double dIterations = double(iterations);
-
-	// Allocate memory for the chunks and the wildcard mask
-	UByte* chunk1 = new UByte[chunkSize];
-	UByte* chunk2 = new UByte[chunkSize];
-	UByte* wildCardMask = new UByte[chunkSize];
-
-	// Fill the chunks and the wildcard mask with random data
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<ULong> distribution(0, 255); // Random byte values
-	for (size_t i = 0; i < chunkSize; ++i) {
-		chunk1[i] = UByte(distribution(gen));
-		chunk2[i] = UByte(distribution(gen));
-		wildCardMask[i] = distribution(gen) < 128 ? 0xFF : 0x00; // 50% chance of being a wildcard
-	}
-
-	std::chrono::microseconds elapsedMicrosecondsByteByte = std::chrono::milliseconds(0);
-	std::chrono::microseconds elapsedMicrosecondsPlatformWord = std::chrono::milliseconds(0);
-#ifdef TBS_IMPL_SSE2
-	std::chrono::microseconds elapsedMicrosecondsSSE2 = std::chrono::milliseconds(0);
-#endif
-
-	for (size_t i = 0; i < iterations; i++)
-	{
-		// Measure the time taken by MemoryCompareWithMaskByteByte
-		auto startByteByte = std::chrono::high_resolution_clock::now();
-		bool resultByteByte = MemoryCompareWithMaskByteByte(chunk1, chunk2, chunkSize, wildCardMask);
-		auto endByteByte = std::chrono::high_resolution_clock::now();
-		std::chrono::duration<double> elapsedByteByte = endByteByte - startByteByte;
-		elapsedMicrosecondsByteByte += std::chrono::duration_cast<std::chrono::microseconds>(elapsedByteByte);
-	}
-	auto elapsedMicrosecondsByteByteAv = double(elapsedMicrosecondsByteByte.count()) / dIterations;
-
-	for (size_t i = 0; i < iterations; i++)
-	{
-		// Measure the time taken by CompareWithMaskWord
-		auto start = std::chrono::high_resolution_clock::now();
-		bool result = Memory::CompareWithMaskWord(chunk1, chunk2, chunkSize, wildCardMask);
-		auto end = std::chrono::high_resolution_clock::now();
-		std::chrono::duration<double> elapsed = end - start;
-		elapsedMicrosecondsPlatformWord += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
-	}
-
-	auto elapsedMicrosecondsPlatformWordAv = double(elapsedMicrosecondsPlatformWord.count()) / dIterations;
-
-#ifdef TBS_IMPL_SSE2
-	for (size_t i = 0; i < iterations; i++)
-	{
-		// Measure the time taken by Memory::SSE2::CompareWithMask
-		auto start = std::chrono::high_resolution_clock::now();
-		bool result = Memory::SSE2::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
-		auto end = std::chrono::high_resolution_clock::now();
-		std::chrono::duration<double> elapsed = end - start;
-		elapsedMicrosecondsSSE2 += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
-	}
-
-	auto elapsedMicrosecondsSSE2Av = double(elapsedMicrosecondsSSE2.count()) / dIterations;
-#endif
-
-
-	std::cout << "MemoryCompareWithMaskByteByte() took " << elapsedMicrosecondsByteByteAv << " microseconds." << std::endl;
-	std::cout << "Memory::CompareWithMaskWord() took " << elapsedMicrosecondsPlatformWordAv << " microseconds." << std::endl;
-#ifdef TBS_IMPL_SSE2
-	std::cout << "Memory::SSE2::CompareWithMask() took " << elapsedMicrosecondsSSE2Av << " microseconds." << std::endl;
-#endif
-
-	// Clean up
-	delete[] chunk1;
-	delete[] chunk2;
-	delete[] wildCardMask;
-}
-
 TEST_CASE("Pattern Scan #1")
 {
 	UByte testCase[] = {
@@ -290,4 +212,82 @@ TEST_CASE("Pattern Scan #2")
 	std::string str = std::string(pStr);
 	CHECK((str == std::string(string1) || str == std::string(string2)));
 	std::cout << "Magic: " << str << std::endl;
+}
+
+TEST_CASE("Benchmark MemoryCompares")
+{
+	// Define the size of the chunk
+	constexpr size_t chunkSize = 1000000; // a million bytes
+	constexpr size_t iterations = 5000000;
+	constexpr double dIterations = double(iterations);
+
+	// Allocate memory for the chunks and the wildcard mask
+	UByte* chunk1 = new UByte[chunkSize];
+	UByte* chunk2 = new UByte[chunkSize];
+	UByte* wildCardMask = new UByte[chunkSize];
+
+	// Fill the chunks and the wildcard mask with random data
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<ULong> distribution(0, 255); // Random byte values
+	for (size_t i = 0; i < chunkSize; ++i) {
+		chunk1[i] = UByte(distribution(gen));
+		chunk2[i] = UByte(distribution(gen));
+		wildCardMask[i] = distribution(gen) < 128 ? 0xFF : 0x00; // 50% chance of being a wildcard
+	}
+
+	std::chrono::microseconds elapsedMicrosecondsByteByte = std::chrono::milliseconds(0);
+	std::chrono::microseconds elapsedMicrosecondsPlatformWord = std::chrono::milliseconds(0);
+#ifdef TBS_IMPL_SSE2
+	std::chrono::microseconds elapsedMicrosecondsSSE2 = std::chrono::milliseconds(0);
+#endif
+
+	for (size_t i = 0; i < iterations; i++)
+	{
+		// Measure the time taken by MemoryCompareWithMaskByteByte
+		auto startByteByte = std::chrono::high_resolution_clock::now();
+		bool resultByteByte = MemoryCompareWithMaskByteByte(chunk1, chunk2, chunkSize, wildCardMask);
+		auto endByteByte = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> elapsedByteByte = endByteByte - startByteByte;
+		elapsedMicrosecondsByteByte += std::chrono::duration_cast<std::chrono::microseconds>(elapsedByteByte);
+	}
+	auto elapsedMicrosecondsByteByteAv = double(elapsedMicrosecondsByteByte.count()) / dIterations;
+
+	for (size_t i = 0; i < iterations; i++)
+	{
+		// Measure the time taken by CompareWithMaskWord
+		auto start = std::chrono::high_resolution_clock::now();
+		bool result = Memory::CompareWithMaskWord(chunk1, chunk2, chunkSize, wildCardMask);
+		auto end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> elapsed = end - start;
+		elapsedMicrosecondsPlatformWord += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+	}
+
+	auto elapsedMicrosecondsPlatformWordAv = double(elapsedMicrosecondsPlatformWord.count()) / dIterations;
+
+#ifdef TBS_IMPL_SSE2
+	for (size_t i = 0; i < iterations; i++)
+	{
+		// Measure the time taken by Memory::SSE2::CompareWithMask
+		auto start = std::chrono::high_resolution_clock::now();
+		bool result = Memory::SSE2::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
+		auto end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> elapsed = end - start;
+		elapsedMicrosecondsSSE2 += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+	}
+
+	auto elapsedMicrosecondsSSE2Av = double(elapsedMicrosecondsSSE2.count()) / dIterations;
+#endif
+
+
+	std::cout << "MemoryCompareWithMaskByteByte() took " << elapsedMicrosecondsByteByteAv << " microseconds." << std::endl;
+	std::cout << "Memory::CompareWithMaskWord() took " << elapsedMicrosecondsPlatformWordAv << " microseconds." << std::endl;
+#ifdef TBS_IMPL_SSE2
+	std::cout << "Memory::SSE2::CompareWithMask() took " << elapsedMicrosecondsSSE2Av << " microseconds." << std::endl;
+#endif
+
+	// Clean up
+	delete[] chunk1;
+	delete[] chunk2;
+	delete[] wildCardMask;
 }
