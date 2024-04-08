@@ -10,6 +10,6 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(doctest)
 
-add_executable(ThunderByteScanTest main.cpp)
+add_executable(TBSTest "TBSTests.cpp")
 
-target_link_libraries(ThunderByteScanTest ThunderByteScan doctest_with_main)
+target_link_libraries(TBSTest TBS doctest_with_main)
