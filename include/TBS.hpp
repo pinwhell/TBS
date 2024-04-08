@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 
 #ifdef TBS_MT
 #include <thread>

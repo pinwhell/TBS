@@ -112,7 +112,9 @@ TEST_CASE("Benchmark MemoryCompares")
 
 	std::chrono::microseconds elapsedMicrosecondsByteByte = std::chrono::milliseconds(0);
 	std::chrono::microseconds elapsedMicrosecondsPlatformWord = std::chrono::milliseconds(0);
+#ifdef TBS_IMPL_SSE2
 	std::chrono::microseconds elapsedMicrosecondsSSE2 = std::chrono::milliseconds(0);
+#endif
 
 	for (size_t i = 0; i < iterations; i++)
 	{
@@ -137,6 +139,7 @@ TEST_CASE("Benchmark MemoryCompares")
 
 	auto elapsedMicrosecondsPlatformWordAv = double(elapsedMicrosecondsPlatformWord.count()) / dIterations;
 
+#ifdef TBS_IMPL_SSE2
 	for (size_t i = 0; i < iterations; i++)
 	{
 		// Measure the time taken by Memory::SSE2::CompareWithMask
@@ -148,11 +151,14 @@ TEST_CASE("Benchmark MemoryCompares")
 	}
 
 	auto elapsedMicrosecondsSSE2Av = double(elapsedMicrosecondsSSE2.count()) / dIterations;
+#endif
 
 
 	std::cout << "MemoryCompareWithMaskByteByte() took " << elapsedMicrosecondsByteByteAv << " microseconds." << std::endl;
 	std::cout << "Memory::CompareWithMaskWord() took " << elapsedMicrosecondsPlatformWordAv << " microseconds." << std::endl;
+#ifdef TBS_IMPL_SSE2
 	std::cout << "Memory::SSE2::CompareWithMask() took " << elapsedMicrosecondsSSE2Av << " microseconds." << std::endl;
+#endif
 
 	// Clean up
 	delete[] chunk1;
