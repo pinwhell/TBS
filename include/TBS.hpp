@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
+#include <unordered_set>
 
 #ifdef TBS_MT
 #include <thread>
@@ -31,6 +32,16 @@ namespace TBS {
 	using UShort = unsigned short;
 	using ULong = unsigned long;
 	using UPtr = uintptr_t;
+
+	/*
+		Assumed to be 0x1000 for simplicity
+	*/
+	constexpr U64 PAGE_SIZE = 0x1000; 
+
+	/*
+		10 Pages per Pattern Slice Scan
+	*/
+	constexpr U64 PATTERN_SEARCH_SLICE_SIZE = PAGE_SIZE * 10;
 
 #ifdef TBS_MT
 	namespace Thread {
@@ -154,6 +165,98 @@ namespace TBS {
 #endif
 			return CompareWithMaskWord(chunk1, chunk2, len, wildCardMask);
 		}
+
+		template<typename T = UPtr>
+		struct Slice {
+			using PtrTypeT = T;
+			using SliceT = Slice<T>;
+
+			Slice(PtrTypeT start, PtrTypeT end)
+				: mStart(start)
+				, mEnd(end)
+			{}
+
+			bool operator==(const SliceT& other) const
+			{
+				return 
+					mStart == other.mStart &&
+					mEnd == other.mEnd;
+			}
+
+			bool operator!=(const SliceT& other) const
+			{
+				return !(*this == other);
+			}
+
+			PtrTypeT mStart;
+			PtrTypeT mEnd;
+
+			struct Container {
+				Container(PtrTypeT start, PtrTypeT end, U64 step)
+					: mStart(start)
+					, mEnd(end < start ? start : end)
+					, mStep(step)
+				{}
+
+				struct Iterator {
+					Iterator(PtrTypeT start, U64 step, PtrTypeT end)
+						: mSlice(SliceT(start, (PtrTypeT)((UByte*)start + step)))
+						, mStep(step)
+						, mEnd(end)
+					{
+						Normalize();
+					}
+
+					SliceT operator*() const
+					{
+						return mSlice;
+					}
+
+					void Normalize()
+					{
+						if (mSlice.mStart > mEnd)
+							mSlice.mStart = mEnd;
+
+						if (mSlice.mEnd > mEnd)
+							mSlice.mEnd = mEnd;
+					}
+
+					Iterator& operator++()
+					{
+						mSlice.mStart = (PtrTypeT)((UByte*)mSlice.mStart + mStep);
+						mSlice.mEnd = (PtrTypeT)((UByte*)mSlice.mEnd + mStep);
+
+						Normalize();
+
+						return *this;
+					}
+
+					bool operator==(const Iterator& other) const {
+						return mSlice == other.mSlice;
+					}
+
+					bool operator!=(const Iterator& other) const {
+						return !(*this == other);
+					}
+
+					SliceT mSlice;
+					PtrTypeT mEnd;
+					U64 mStep;
+				};
+
+				Iterator begin() const {
+					return Iterator(mStart, mStep, mEnd);
+				}
+
+				Iterator end() const {
+					return Iterator(mEnd, mStep, mEnd);
+				}
+
+				PtrTypeT mStart;
+				PtrTypeT mEnd;
+				U64 mStep;
+			};
+		};
 	}
 
 	namespace Pattern
@@ -250,6 +353,8 @@ namespace TBS {
 		};
 
 		struct Description {
+			using SearchSlice = Memory::Slice<const UByte*>;
+
 			struct Shared {
 				struct ResultAccesor {
 					ResultAccesor(Shared& sharedDesc)
@@ -296,9 +401,10 @@ namespace TBS {
 				: mShared(shared)
 				, mUID(uid)
 				, mPattern(pattern)
-				, mStart(searchStart)
-				, mEnd(searchEnd)
 				, mTransforms(transformers)
+				, mSearchRangeSlicer(searchStart, searchEnd, PATTERN_SEARCH_SLICE_SIZE)
+				, mCurrentSearchRange(mSearchRangeSlicer.begin())
+				, mLastSearchPos(searchStart)
 			{
 				Parse(mPattern, mParsed);
 			}
@@ -308,26 +414,27 @@ namespace TBS {
 				return mParsed;
 			}
 
-			std::string mPattern;
-			std::string mUID;
-			std::vector<std::function<U64(Description&, U64)>> mTransforms;
-			ParseResult mParsed;
 			Shared& mShared;
-			const UByte* mStart;
-			const UByte* mEnd;
+			std::string mUID;
+			std::string mPattern;
+			std::vector<std::function<U64(Description&, U64)>> mTransforms;
+			SearchSlice::Container mSearchRangeSlicer;
+			SearchSlice::Container::Iterator mCurrentSearchRange;
+			const UByte* mLastSearchPos;
+			ParseResult mParsed;
 		};
 
 		inline bool Scan(Description& desc)
 		{
-			if (desc.mShared.mFinished)
-				return desc.mShared.mResult.empty() == false;
-
-			if (!desc.mStart || !desc.mEnd)
+			if (desc.mShared.mFinished || 
+				desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end())
 				return false;
 
 			const size_t patternLen = desc.mParsed.mPattern.size();
 
-			for (const UByte* i = desc.mStart; i + patternLen - 1 < desc.mEnd && !desc.mShared.mFinished; i++)
+			Description::SearchSlice currSearchnigRange = (*desc.mCurrentSearchRange);
+
+			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd && !desc.mShared.mFinished; i++)
 			{
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
 					continue;
@@ -361,13 +468,14 @@ namespace TBS {
 					// lets break turn off the searching & break
 
 					desc.mShared.mFinished = true;
-					return true;
+					return false;
 #ifdef TBS_MT
 				}
 #endif
 			}
 
-			return desc.mShared.mResult.empty() == false;
+			++desc.mCurrentSearchRange;
+			return desc.mCurrentSearchRange != desc.mSearchRangeSlicer.end();
 		}
 
 		using SharedDescription = Description::Shared;
@@ -505,20 +613,40 @@ namespace TBS {
 
 	bool Scan(State& state)
 	{
-		{
+		std::unordered_set<std::string> uidStillSearching;
+#ifdef TBS_MT
+		std::mutex uidStillSearchingMtx;
+#endif
+		// Initially Searching for all UIDs.
+
+		for (Pattern::Description& description : state.mDescriptionts)
+			uidStillSearching.insert(description.mUID);
+
+		while(!uidStillSearching.empty()){
 #ifdef TBS_MT
 			Thread::Pool threadPool;
 #endif
 			for (Pattern::Description& description : state.mDescriptionts)
 			{
+				if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
+					continue;
+
+				// At this point, current UID still searching!
 #ifdef TBS_MT
 				threadPool.enqueue(
 				[&](Pattern::Description& description)
 				{
-					Pattern::Scan(description);
+					if (Pattern::Scan(description))
+						return;
+
+					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
+					uidStillSearching.erase(description.mUID);
 				}, description);
 #else
-				Pattern::Scan(description);
+				if (Pattern::Scan(description))
+					continue;
+
+				uidStillSearching.erase(description.mUID);
 #endif
 			}
 		}

@@ -76,16 +76,114 @@ TEST_CASE("Memory Comparing Masked")
 	}
 }
 
-/*
-	wildCardMask expected to be 0xFF for byte that are wild carded and 0x0 for non-wildcarded bytes
-*/
-inline bool MemoryCompareWithMaskByteByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
-	for (size_t i = 0; i < len; i++) {
-		if (wildCardMask[i] != 0xFF && chunk1[i] != chunk2[i])
-			return false;
-	}
+TEST_CASE("Memory Slicing Testing")
+{
+	Memory::Slice<UPtr>::Container container(0x0, 0x2C, 0x10);
+	Memory::Slice<UPtr>::Container::Iterator it = container.begin();
 
-	return true;
+	CHECK((*it).mStart == 0x0);
+	CHECK((*it).mEnd == 0x10);
+
+	++it;
+
+	CHECK((*it).mStart == 0x10);
+	CHECK((*it).mEnd == 0x20);
+
+	++it;
+
+	CHECK((*it).mStart == 0x20);
+	CHECK((*it).mEnd == 0x2C);
+
+	++it;
+
+	CHECK((*it).mStart == 0x2C);
+	CHECK((*it).mEnd == 0x2C);
+
+	++it;
+
+	CHECK((*it).mStart == 0x2C);
+	CHECK((*it).mEnd == 0x2C);
+	CHECK(it == container.end());
+
+	// Step overflow Test
+
+	container = Memory::Slice<UPtr>::Container(0x0, 0x10, 0xFFFF);
+	it = container.begin();
+
+	CHECK((*it).mStart == 0x0);
+	CHECK((*it).mEnd == 0x10);
+
+	++it;
+
+	CHECK(it == container.end());
+
+	// Negative Range Test
+
+	container = Memory::Slice<UPtr>::Container(0x10, 0x0, 0x10); // Should be defaulted to end
+	it = container.begin();
+	CHECK(it == container.end());
+}
+
+template<typename T>
+auto PatternScanSliceBase(T buff, U64 level = 0)
+{
+	return (T)((UByte*)buff + (PATTERN_SEARCH_SLICE_SIZE * level));
+}
+
+TEST_CASE("Pattern Sliced Scan Test")
+{
+	// Lets define a big buffer of 2x PATTERN_SEARCH_SLICE_SIZE
+
+	constexpr auto TESTBUFF_SIZE = PATTERN_SEARCH_SLICE_SIZE * 2;
+	std::unique_ptr<UByte[]> buffSmart = std::make_unique<UByte[]>(TESTBUFF_SIZE);
+	auto buff = buffSmart.get();
+
+	// Lets clear everything
+
+	memset(buff, 0x0, TESTBUFF_SIZE);
+	memcpy(buff, "\xDE\xAD\xBE\xEF", 4); // Denotes beginning of buff, for debugging purposes
+
+	// create the state
+
+	State state(buff, buff + TESTBUFF_SIZE);
+
+	// lets add patterns guranteed not to be found (so we can emulate scannig over the entire `buff`)
+
+	Pattern::Description pattern1 = state.AddPattern(
+		state.PatternBuilder()
+		.setUID("Pattern 1")
+		.setPattern("FF FF FF FF FF")
+		.Build()
+	).mDescriptionts.back();
+	auto pattern1Size = pattern1.mParsed.mPattern.size();
+
+	Pattern::Description pattern2 = state.AddPattern(
+		state.PatternBuilder()
+		.setUID("Pattern 2")
+		.setPattern("EE EE EE EE EE EE EE EE EE EE EE EE EE")
+		.Build()
+	).mDescriptionts.back();
+	auto pattern2Size = pattern2.mParsed.mPattern.size();
+
+	// Expected to be at the beginning
+	CHECK(pattern1.mLastSearchPos == buff);
+	CHECK(pattern2.mLastSearchPos == buff);
+
+	// Expected the pattern to keep wanting to find more (in subsecuent slices of search range)
+	CHECK(Pattern::Scan(pattern1));
+	CHECK(Pattern::Scan(pattern2));
+
+	// Expected first slice scan exausted and .mLastSearchPosition to be = buff + PATTERN_SEARCH_SLICE_SIZE - patternXSize + 1 aka at the end of first slice
+	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern1Size + 1);
+	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern2Size + 1);
+
+	// Same Again..., now we expect a false, since we will consume second and last scanning slice
+	CHECK_FALSE(Pattern::Scan(pattern1));
+	CHECK_FALSE(Pattern::Scan(pattern2));
+
+	// Now at the end of second slice
+	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern1Size + 1);
+	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern2Size + 1);
 }
 
 TEST_CASE("Pattern Scan #1")
@@ -212,6 +310,18 @@ TEST_CASE("Pattern Scan #2")
 	std::string str = std::string(pStr);
 	CHECK((str == std::string(string1) || str == std::string(string2)));
 	std::cout << "Magic: " << str << std::endl;
+}
+
+/*
+	wildCardMask expected to be 0xFF for byte that are wild carded and 0x0 for non-wildcarded bytes
+*/
+inline bool MemoryCompareWithMaskByteByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
+	for (size_t i = 0; i < len; i++) {
+		if (wildCardMask[i] != 0xFF && chunk1[i] != chunk2[i])
+			return false;
+	}
+
+	return true;
 }
 
 TEST_CASE("Benchmark MemoryCompares")
