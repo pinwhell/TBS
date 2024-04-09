@@ -639,7 +639,6 @@ namespace TBS {
 				threadPool.enqueue(
 				[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
 				{
-					//Pattern::Description& description = *_description;
 					if (Pattern::Scan(description))
 						return;
 
