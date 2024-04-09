@@ -8,6 +8,7 @@ Features
     - SIMD (Single Instruction, Multiple Data) support for parallel processing
     - Simple interface for defining and scanning patterns
     - Flexible pattern results transformation capabilities
+    - Pattern Scan load distribution horizontally (even for single thread setups)
 
 ## Usage
 
