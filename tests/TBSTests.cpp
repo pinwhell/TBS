@@ -149,20 +149,24 @@ TEST_CASE("Pattern Sliced Scan Test")
 
 	// lets add patterns guranteed not to be found (so we can emulate scannig over the entire `buff`)
 
-	Pattern::Description pattern1 = state.AddPattern(
+	state
+		.AddPattern(
 		state.PatternBuilder()
 		.setUID("Pattern 1")
 		.setPattern("FF FF FF FF FF")
 		.Build()
-	).mDescriptionts.back();
-	auto pattern1Size = pattern1.mParsed.mPattern.size();
-
-	Pattern::Description pattern2 = state.AddPattern(
+	)
+		.AddPattern(
 		state.PatternBuilder()
 		.setUID("Pattern 2")
 		.setPattern("EE EE EE EE EE EE EE EE EE EE EE EE EE")
 		.Build()
-	).mDescriptionts.back();
+	);
+
+	Pattern::Description& pattern1 = state.mDescriptionts[0];
+	Pattern::Description& pattern2 = state.mDescriptionts[1];
+
+	auto pattern1Size = pattern1.mParsed.mPattern.size();
 	auto pattern2Size = pattern2.mParsed.mPattern.size();
 
 	// Expected to be at the beginning
@@ -184,6 +188,9 @@ TEST_CASE("Pattern Sliced Scan Test")
 	// Now at the end of second slice
 	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern1Size + 1);
 	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern2Size + 1);
+
+	// Sanity Checks, expecting TBS::Scan to return false (patterns already at end and didnt found anything)
+	CHECK_FALSE(Scan(state));
 }
 
 TEST_CASE("Pattern Scan #1")

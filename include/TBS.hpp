@@ -73,7 +73,7 @@ namespace TBS {
 			inline void enqueue(F&& f, Args&&... args) {
 				{
 					std::unique_lock<std::mutex> lock(mTasksMtx);
-					mTasks.emplace(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+					mTasks.emplace(std::bind(std::forward<F>(f), std::forward<Args&&>(args)...));
 				}
 				mWorkersCondVar.notify_one();
 			}
@@ -427,7 +427,7 @@ namespace TBS {
 		inline bool Scan(Description& desc)
 		{
 			if (desc.mShared.mFinished || 
-				desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end())
+				(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end()))
 				return false;
 
 			const size_t patternLen = desc.mParsed.mPattern.size();
@@ -628,14 +628,18 @@ namespace TBS {
 #endif
 			for (Pattern::Description& description : state.mDescriptionts)
 			{
-				if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
-					continue;
+				{
+					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
+					if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
+						continue; 
+				}
 
 				// At this point, current UID still searching!
 #ifdef TBS_MT
 				threadPool.enqueue(
-				[&](Pattern::Description& description)
+				[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
 				{
+					//Pattern::Description& description = *_description;
 					if (Pattern::Scan(description))
 						return;
 
