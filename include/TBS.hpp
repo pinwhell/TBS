@@ -203,7 +203,7 @@ namespace TBS {
 
 				const size_t lastWordIndex = wordLen * sizeof(__m256i);
 
-				return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
+				return CompareWithMaskWord(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
 					wildCardMask + lastWordIndex);
 			}
 		} // namespace AVX
