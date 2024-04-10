@@ -606,7 +606,7 @@ namespace TBS {
 				}
 
 				if (mSharedDescriptions.find(mUID) == mSharedDescriptions.end())
-					mSharedDescriptions[mUID] = std::make_unique<SharedDescription>(mScanType);
+					mSharedDescriptions[mUID] = std::unique_ptr<SharedDescription>(new SharedDescription(mScanType));
 
 				return Description(*mSharedDescriptions[mUID], mUID, mPattern, mScanStart, mScanEnd, mTransformers);
 			}
