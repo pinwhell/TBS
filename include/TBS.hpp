@@ -30,6 +30,10 @@
 #endif
 #endif
 
+#ifndef TBS_RESULT_TYPE
+#define TBS_RESULT_TYPE U64
+#endif
+
 #ifdef TBS_IMPL_SSE2
 #include <emmintrin.h>
 #endif
@@ -312,8 +316,8 @@ namespace TBS {
 
 	namespace Pattern
 	{
-		using Result = U64;
-		using Results = std::vector<U64>;
+		using Result = TBS_RESULT_TYPE;
+		using Results = std::vector<Result>;
 
 		struct ParseResult {
 			ParseResult()
@@ -448,7 +452,7 @@ namespace TBS {
 				ResultAccesor mResultAccesor;
 			};
 
-			Description(Shared& shared, const std::string& uid, const std::string& pattern, const UByte* searchStart, const UByte* searchEnd, const std::vector<std::function<U64(Description&, U64)>>& transformers)
+			Description(Shared& shared, const std::string& uid, const std::string& pattern, const UByte* searchStart, const UByte* searchEnd, const std::vector<std::function<Result(Description&, Result)>>& transformers)
 				: mShared(shared)
 				, mUID(uid)
 				, mPattern(pattern)
@@ -468,7 +472,7 @@ namespace TBS {
 			Shared& mShared;
 			std::string mUID;
 			std::string mPattern;
-			std::vector<std::function<U64(Description&, U64)>> mTransforms;
+            std::vector<std::function<Result(Description&, Result)>> mTransforms;
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
 			const UByte* mLastSearchPos;
@@ -490,7 +494,7 @@ namespace TBS {
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
 					continue;
 
-				U64 currMatch = (U64)i;
+				Result currMatch = (Result) i;
 
 				// At this point, we found a match
 
@@ -574,7 +578,7 @@ namespace TBS {
 				return *this;
 			}
 
-			DescriptionBuilder& AddTransformer(const std::function<U64(Description&, U64)>& transformer)
+			DescriptionBuilder& AddTransformer(const std::function<Result(Description&, Result)>& transformer)
 			{
 				mTransformers.emplace_back(transformer);
 				return *this;
@@ -618,7 +622,7 @@ namespace TBS {
 			std::string mUID;
 			const UByte* mScanStart;
 			const UByte* mScanEnd;
-			std::vector<std::function<U64(Description&, U64)>> mTransformers;
+            std::vector<std::function<Result(Description&, Result)>> mTransformers;
 		};
 	}
 
