@@ -334,8 +334,8 @@ inline bool MemoryCompareWithMaskByteByte(const UByte* chunk1, const UByte* chun
 TEST_CASE("Benchmark MemoryCompares")
 {
 	// Define the size of the chunk
-	constexpr size_t chunkSize = 1000000; // a million bytes
-	constexpr size_t iterations = 5000000;
+	constexpr size_t chunkSize = 10000000; // a million bytes
+	constexpr size_t iterations = 50000000;
 	constexpr double dIterations = double(iterations);
 
 	// Allocate memory for the chunks and the wildcard mask
@@ -358,6 +358,10 @@ TEST_CASE("Benchmark MemoryCompares")
 #ifdef TBS_IMPL_SSE2
 	std::chrono::microseconds elapsedMicrosecondsSSE2 = std::chrono::milliseconds(0);
 #endif
+#ifdef TBS_IMPL_AVX
+	std::chrono::microseconds elapsedMicrosecondsAVX = std::chrono::milliseconds(0);
+#endif
+
 
 	for (size_t i = 0; i < iterations; i++)
 	{
@@ -396,11 +400,29 @@ TEST_CASE("Benchmark MemoryCompares")
 	auto elapsedMicrosecondsSSE2Av = double(elapsedMicrosecondsSSE2.count()) / dIterations;
 #endif
 
+#ifdef TBS_IMPL_AVX
+	for (size_t i = 0; i < iterations; i++)
+	{
+		// Measure the time taken by Memory::AVX::CompareWithMask
+		auto start = std::chrono::high_resolution_clock::now();
+		bool result = Memory::AVX::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
+		auto end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> elapsed = end - start;
+		elapsedMicrosecondsAVX += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+	}
 
-	std::cout << "MemoryCompareWithMaskByteByte() took " << elapsedMicrosecondsByteByteAv << " microseconds." << std::endl;
-	std::cout << "Memory::CompareWithMaskWord() took " << elapsedMicrosecondsPlatformWordAv << " microseconds." << std::endl;
+	auto elapsedMicrosecondsAVXAv = double(elapsedMicrosecondsAVX.count()) / dIterations;
+#endif
+
+
+
+	std::cout << elapsedMicrosecondsByteByteAv << " microseconds. took MemoryCompareWithMaskByteByte()"  << std::endl;
+	std::cout << elapsedMicrosecondsPlatformWordAv << " microseconds. took Memory::CompareWithMaskWord()" << std::endl;
 #ifdef TBS_IMPL_SSE2
-	std::cout << "Memory::SSE2::CompareWithMask() took " << elapsedMicrosecondsSSE2Av << " microseconds." << std::endl;
+	std::cout << elapsedMicrosecondsSSE2Av << " microseconds. took Memory::SSE2::CompareWithMask()" << std::endl;
+#endif
+#ifdef TBS_IMPL_AVX
+	std::cout << elapsedMicrosecondsAVXAv << " microseconds. took Memory::AVX::CompareWithMask()" << std::endl;
 #endif
 
 	// Clean up

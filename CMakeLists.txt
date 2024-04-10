@@ -12,6 +12,8 @@ option(TBS_MT "Enable multithreading in TBS" ON)
 option(TBS_USE_SSE2 "Enable SSE2 in TBS" ON)
 option(TBS_USE_AVX "Enable AVX in TBS" ON)
 
+add_subdirectory(vendor)
+
 add_library(TBS INTERFACE)
 
 if(MSVC)
