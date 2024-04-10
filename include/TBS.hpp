@@ -629,7 +629,9 @@ namespace TBS {
 			for (Pattern::Description& description : state.mDescriptionts)
 			{
 				{
+#ifdef TBS_MT
 					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
+#endif
 					if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
 						continue; 
 				}

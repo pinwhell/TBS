@@ -8,8 +8,8 @@ if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
 endif()
 
 option(TBS_TESTS "TBS with Tests" ${MAIN_PROJECT})
-option(TBS_MT "Enable multithreading in TBS" ON)
-option(TBS_USE_SSE2 "Enable SSE2 in TBS" ON)
+option(TBS_MT "Enable multithreading in TBS" OFF)
+option(TBS_USE_SSE2 "Enable SSE2 in TBS" OFF)
 
 add_library(TBS INTERFACE)
 
