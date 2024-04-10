@@ -413,7 +413,7 @@ namespace TBS {
 					{}
 
 					operator const Results& () const {
-						return Results();
+						return ResultsGet();
 					}
 
 					operator Result () const {
@@ -423,7 +423,7 @@ namespace TBS {
 						return mSharedDesc.mResult[0];
 					}
 
-					const Results& Results() const
+					const Results& ResultsGet() const
 					{
 						return mSharedDesc.mResult;
 					}
