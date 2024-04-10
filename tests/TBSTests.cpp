@@ -218,7 +218,7 @@ TEST_CASE("Pattern Scan #1")
 				);
 
 	CHECK(Scan(state));
-	CHECK(state["TestUID"].Results().size() == 1);
+	CHECK(state["TestUID"].ResultsGet().size() == 1);
 	CHECK(state["TestUID"] == 0xFFEEFFDD);
 }
 
@@ -311,7 +311,7 @@ TEST_CASE("Pattern Scan #2")
 	}
 
 	CHECK(Scan(state));
-	CHECK(state["String"].Results().size() == 1);
+	CHECK(state["String"].ResultsGet().size() == 1);
 	const char* pStr = (const char*)(U64)state["String"];
 	CHECK_FALSE(pStr == nullptr);
 	std::string str = std::string(pStr);
