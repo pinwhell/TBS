@@ -30,6 +30,10 @@
 #endif
 #endif
 
+#ifndef TBS_RESULT_TYPE
+#define TBS_RESULT_TYPE U64
+#endif
+
 #ifdef TBS_IMPL_SSE2
 #include <emmintrin.h>
 #endif
@@ -49,7 +53,7 @@ namespace TBS {
 	/*
 		Assumed to be 0x1000 for simplicity
 	*/
-	constexpr U64 PAGE_SIZE = 0x1000; 
+	constexpr U64 PAGE_SIZE = 0x1000;
 
 	/*
 		10 Pages per Pattern Slice Scan
@@ -172,46 +176,46 @@ namespace TBS {
 		}
 #endif
 
-		
-#ifdef TBS_IMPL_AVX
-        namespace AVX
-        {
-            inline __m256i _mm256_not_si256(__m256i value)
-            {
-                __m256i mask = _mm256_set1_epi32(-1);
-                return _mm256_xor_si256(value, mask);
-            }
 
-            inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
-            {
-                const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
+#ifdef TBS_IMPL_AVX
+		namespace AVX
+		{
+			inline __m256i _mm256_not_si256(__m256i value)
+			{
+				__m256i mask = _mm256_set1_epi32(-1);
+				return _mm256_xor_si256(value, mask);
+			}
+
+			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
+			{
+				const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
 
 				for (size_t i = 0; i < wordLen; i++)
-                { 
+				{
 					// Convert byte index to word index
-                    __m256i wordMask = _mm256_not_si256(_mm256_load_si256((const __m256i*) wildCardMask + i));
-                    __m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
-                    __m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
+					__m256i wordMask = _mm256_not_si256(_mm256_load_si256((const __m256i*) wildCardMask + i));
+					__m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
+					__m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
 
-                    if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
-                        return false;
+					if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
+						return false;
 				}
 
 				const size_t lastWordIndex = wordLen * sizeof(__m256i);
 
-                return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
-                    wildCardMask + lastWordIndex);
-            }
-        } // namespace AVX
+				return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
+					wildCardMask + lastWordIndex);
+			}
+		} // namespace AVX
 #endif
 
 
 		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
 		{
 #ifdef TBS_USE_AVX
-            return AVX::CompareWithMask(chunk1, chunk2, len, wildCardMask);
+			return AVX::CompareWithMask(chunk1, chunk2, len, wildCardMask);
 #elif TBS_USE_SSE2
-            return SSE2::CompareWithMask(chunk1, chunk2, len, wildCardMask);
+			return SSE2::CompareWithMask(chunk1, chunk2, len, wildCardMask);
 #else 
 			return CompareWithMaskWord(chunk1, chunk2, len, wildCardMask);
 #endif
@@ -229,7 +233,7 @@ namespace TBS {
 
 			bool operator==(const SliceT& other) const
 			{
-				return 
+				return
 					mStart == other.mStart &&
 					mEnd == other.mEnd;
 			}
@@ -312,8 +316,8 @@ namespace TBS {
 
 	namespace Pattern
 	{
-		using Result = U64;
-		using Results = std::vector<U64>;
+		using Result = TBS_RESULT_TYPE;
+		using Results = std::vector<Result>;
 
 		struct ParseResult {
 			ParseResult()
@@ -329,6 +333,33 @@ namespace TBS {
 			std::vector<UByte> mWildcardMask;
 			bool mParseSuccess;
 		};
+
+		inline bool Parse(const void* _pattern, const char* mask, ParseResult& result)
+		{
+			result = ParseResult();
+
+			if (_pattern == nullptr || mask == nullptr)
+				return false;
+
+			size_t patternLen = strlen(mask);
+
+			result.mPattern.resize(patternLen);
+			result.mWildcardMask.resize(patternLen);
+
+			memcpy(result.mPattern.data(), _pattern, patternLen);
+			memset(result.mWildcardMask.data(), 0x00, patternLen);
+
+			for (size_t i = 0; i < patternLen; i++)
+			{
+				if (mask[i] != '?')
+					continue;
+
+				result.mPattern[i] = 0x00;
+				result.mWildcardMask[i] = 0xFF;
+			}
+
+			return result.mParseSuccess = true;
+		}
 
 		inline bool Parse(const std::string& pattern, ParseResult& result)
 		{
@@ -398,12 +429,20 @@ namespace TBS {
 			return Parse(pattern, res) && res;
 		}
 
+		inline bool Valid(const void* _pattern, const char* mask)
+		{
+			ParseResult res;
+
+			return Parse(_pattern, mask, res) && res;
+		}
+
 		enum class EScan {
 			SCAN_ALL,
 			SCAN_FIRST
 		};
 
 		struct Description {
+			using ResultTransformer = std::function<Result(Description&, Result)>;
 			using SearchSlice = Memory::Slice<const UByte*>;
 
 			struct Shared {
@@ -448,16 +487,20 @@ namespace TBS {
 				ResultAccesor mResultAccesor;
 			};
 
-			Description(Shared& shared, const std::string& uid, const std::string& pattern, const UByte* searchStart, const UByte* searchEnd, const std::vector<std::function<U64(Description&, U64)>>& transformers)
-				: mShared(shared)
-				, mUID(uid)
-				, mPattern(pattern)
-				, mTransforms(transformers)
-				, mSearchRangeSlicer(searchStart, searchEnd, PATTERN_SEARCH_SLICE_SIZE)
-				, mCurrentSearchRange(mSearchRangeSlicer.begin())
-				, mLastSearchPos(searchStart)
+			Description(Shared& shared, const std::string& uid, const UByte* searchStart, const UByte* searchEnd,
+				const std::vector<ResultTransformer>& transformers, const std::string& pattern)
+				: Description(shared, uid, searchStart, searchEnd, transformers)
 			{
-				Parse(mPattern, mParsed);
+				Parse(pattern, mParsed);
+			}
+
+			Description(
+				Shared& shared, const std::string& uid,
+				const UByte* searchStart, const UByte* searchEnd,
+				const std::vector<ResultTransformer>& transformers, const void* _pattern, const char* mask)
+				: Description(shared, uid, searchStart, searchEnd, transformers)
+			{
+				Parse(_pattern, mask, mParsed);
 			}
 
 			operator bool()
@@ -467,17 +510,30 @@ namespace TBS {
 
 			Shared& mShared;
 			std::string mUID;
-			std::string mPattern;
-			std::vector<std::function<U64(Description&, U64)>> mTransforms;
+			std::vector<ResultTransformer> mTransforms;
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
 			const UByte* mLastSearchPos;
 			ParseResult mParsed;
+
+		private:
+
+			Description(Shared& shared, const std::string& uid, const UByte* searchStart, const UByte* searchEnd,
+				const std::vector<ResultTransformer>& transformers)
+				: mShared(shared)
+				, mUID(uid)
+				, mTransforms(transformers)
+				, mSearchRangeSlicer(searchStart, searchEnd, PATTERN_SEARCH_SLICE_SIZE)
+				, mCurrentSearchRange(mSearchRangeSlicer.begin())
+				, mLastSearchPos(searchStart)
+			{ }
 		};
+
+		using ResultTransformer = Description::ResultTransformer;
 
 		inline bool Scan(Description& desc)
 		{
-			if (desc.mShared.mFinished || 
+			if (desc.mShared.mFinished ||
 				(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end()))
 				return false;
 
@@ -490,7 +546,7 @@ namespace TBS {
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
 					continue;
 
-				U64 currMatch = (U64)i;
+				Result currMatch = (Result)i;
 
 				// At this point, we found a match
 
@@ -542,6 +598,8 @@ namespace TBS {
 				, mScanStart(0)
 				, mScanEnd(0)
 				, mScanType(EScan::SCAN_ALL)
+				, mRawPattern(0)
+				, mRawMask(0)
 			{}
 
 			DescriptionBuilder& setPattern(const std::string& pattern)
@@ -552,6 +610,22 @@ namespace TBS {
 					return *this;
 
 				return setUID(pattern);
+			}
+
+			DescriptionBuilder& setPatternRaw(const void* pattern)
+			{
+				mRawPattern = pattern;
+
+				if (!mUID.empty())
+					return *this;
+
+				return setUID(std::to_string((UPtr)pattern));
+			}
+
+			DescriptionBuilder& setMask(const char* mask)
+			{
+				mRawMask = mask;
+				return *this;
 			}
 
 			DescriptionBuilder& setUID(const std::string& uid)
@@ -574,7 +648,7 @@ namespace TBS {
 				return *this;
 			}
 
-			DescriptionBuilder& AddTransformer(const std::function<U64(Description&, U64)>& transformer)
+			DescriptionBuilder& AddTransformer(const Description::ResultTransformer& transformer)
 			{
 				mTransformers.emplace_back(transformer);
 				return *this;
@@ -598,27 +672,32 @@ namespace TBS {
 
 			Description Build()
 			{
-				if (Pattern::Valid(mPattern) == false)
+				if (!(mRawPattern && mRawMask) && Pattern::Valid(mPattern) == false)
 				{
 					static SharedDescription nullSharedDesc(EScan::SCAN_ALL);
-					static Description nullDescription(nullSharedDesc, "", "", 0, 0, {});
+					static Description nullDescription(nullSharedDesc, "", 0, 0, {}, "");
 					return nullDescription;
 				}
 
 				if (mSharedDescriptions.find(mUID) == mSharedDescriptions.end())
 					mSharedDescriptions[mUID] = std::unique_ptr<SharedDescription>(new SharedDescription(mScanType));
 
-				return Description(*mSharedDescriptions[mUID], mUID, mPattern, mScanStart, mScanEnd, mTransformers);
+				if (mRawPattern && mRawMask)
+					return Description(*mSharedDescriptions[mUID], mUID, mScanStart, mScanEnd, mTransformers, mRawPattern, mRawMask);
+
+				return Description(*mSharedDescriptions[mUID], mUID, mScanStart, mScanEnd, mTransformers, mPattern);
 			}
 
 		private:
 			std::unordered_map<std::string, std::unique_ptr<Pattern::SharedDescription>>& mSharedDescriptions;
 			EScan mScanType;
 			std::string mPattern;
+			const void* mRawPattern;
+			const char* mRawMask;
 			std::string mUID;
 			const UByte* mScanStart;
 			const UByte* mScanEnd;
-			std::vector<std::function<U64(Description&, U64)>> mTransformers;
+			std::vector<ResultTransformer> mTransformers;
 		};
 	}
 
@@ -674,7 +753,7 @@ namespace TBS {
 		for (Pattern::Description& description : state.mDescriptionts)
 			uidStillSearching.insert(description.mUID);
 
-		while(!uidStillSearching.empty()){
+		while (!uidStillSearching.empty()) {
 #ifdef TBS_MT
 			Thread::Pool threadPool;
 #endif
@@ -685,20 +764,20 @@ namespace TBS {
 					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
 #endif
 					if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
-						continue; 
+						continue;
 				}
 
 				// At this point, current UID still searching!
 #ifdef TBS_MT
 				threadPool.enqueue(
-				[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
-				{
-					if (Pattern::Scan(description))
-						return;
+					[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
+					{
+						if (Pattern::Scan(description))
+							return;
 
-					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
-					uidStillSearching.erase(description.mUID);
-				}, description);
+						std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
+						uidStillSearching.erase(description.mUID);
+					}, description);
 #else
 				if (Pattern::Scan(description))
 					continue;

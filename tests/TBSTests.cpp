@@ -25,6 +25,12 @@ TEST_CASE("Pattern Parsing") {
 	CHECK_FALSE(Pattern::Parse("AA ? BB ?CC ? DD ?EE ? FF", res));
 	CHECK_EQ(res.mPattern.size(), 3 /*Just 3 valid bytes*/);
 	CHECK_EQ(res.mWildcardMask.size(), 3 /*Just 3 valid bytes*/);
+
+	const char testRawPattern[] = "\x10\x00\x30\x40\x00\x60";
+	const char testRawPatternMask[] = "x?xx?x";
+	CHECK(Pattern::Parse(testRawPattern, testRawPatternMask, res));
+	CHECK_EQ(res.mPattern.size(), sizeof(testRawPattern) - 1);
+	CHECK_EQ(res.mWildcardMask.size(), sizeof(testRawPatternMask) - 1);
 }
 
 TEST_CASE("Memory Comparing Masked")
@@ -318,6 +324,37 @@ TEST_CASE("Pattern Scan #2")
 	CHECK((str == std::string(string1) || str == std::string(string2)));
 	std::cout << "Magic: " << str << std::endl;
 }
+
+TEST_CASE("Pattern Scan #3")
+{
+	UByte testCase[] = {
+		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
+	};
+
+	State state(testCase, testCase + sizeof(testCase));
+
+	state.AddPattern(
+		state
+		.PatternBuilder()
+		.setPatternRaw("\xAA\x00\xBB\x00\xCC\x00\xDD\x00\xEE\x00\xFF")
+		.setMask("x?x?x?x?x?x")
+		.setUID("TestUID")
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+			return U64(((*(U32*)(res + 6))) & 0x00FF00FFull); // Just Picking 0xEE and 0xFF
+			})
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+				// expected to be 0xXXEEXXDD comming from previous transform
+				CHECK(res == 0x00EE00DDull);
+				return res | 0xFF00FF00ull; // expected to be 0xFFEEFFDD
+			})
+				.Build()
+				);
+
+	CHECK(Scan(state));
+	CHECK(state["TestUID"].ResultsGet().size() == 1);
+	CHECK(state["TestUID"] == 0xFFEEFFDD);
+}
+
 
 /*
 	wildCardMask expected to be 0xFF for byte that are wild carded and 0x0 for non-wildcarded bytes
