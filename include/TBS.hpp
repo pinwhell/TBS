@@ -21,8 +21,21 @@
 #endif
 #endif
 
+#ifdef TBS_USE_AVX
+#ifndef TBS_IMPL_AVX
+#define TBS_IMPL_AVX
+#endif
+#ifndef TBS_IMPL_SSE2
+#define TBS_IMPL_SSE2
+#endif
+#endif
+
 #ifdef TBS_IMPL_SSE2
 #include <emmintrin.h>
+#endif
+
+#ifdef TBS_IMPL_AVX
+#include <immintrin.h>
 #endif
 
 namespace TBS {
@@ -129,6 +142,7 @@ namespace TBS {
 
 			return true;
 		}
+
 #ifdef TBS_IMPL_SSE2
 		namespace SSE2 {
 			inline __m128i _mm_not_si128(__m128i value)
@@ -158,12 +172,49 @@ namespace TBS {
 		}
 #endif
 
+		
+#ifdef TBS_IMPL_AVX
+        namespace AVX
+        {
+            inline __m256i _mm256_not_si256(__m256i value)
+            {
+                __m256i mask = _mm256_set1_epi32(-1);
+                return _mm256_xor_si256(value, mask);
+            }
+
+            inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
+            {
+                const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
+
+				for (size_t i = 0; i < wordLen; i++)
+                { 
+					// Convert byte index to word index
+                    __m256i wordMask = _mm256_not_si256(_mm256_load_si256((const __m256i*) wildCardMask + i));
+                    __m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
+                    __m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
+
+                    if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
+                        return false;
+				}
+
+				const size_t lastWordIndex = wordLen * sizeof(__m256i);
+
+                return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
+                    wildCardMask + lastWordIndex);
+            }
+        } // namespace AVX
+#endif
+
+
 		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
 		{
-#ifdef TBS_USE_SSE2
-			return SSE2::CompareWithMask(chunk1, chunk2, len, wildCardMask);
-#endif
+#ifdef TBS_USE_AVX
+            return AVX::CompareWithMask(chunk1, chunk2, len, wildCardMask);
+#elif TBS_USE_SSE2
+            return SSE2::CompareWithMask(chunk1, chunk2, len, wildCardMask);
+#else 
 			return CompareWithMaskWord(chunk1, chunk2, len, wildCardMask);
+#endif
 		}
 
 		template<typename T = UPtr>
