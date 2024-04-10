@@ -539,7 +539,7 @@ namespace TBS {
 				return setScanType(EScan::SCAN_FIRST);
 			}
 
-			DescriptionBuilder Clone()
+			DescriptionBuilder Clone() const
 			{
 				return DescriptionBuilder(*this);
 			}
