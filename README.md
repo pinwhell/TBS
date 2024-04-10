@@ -72,7 +72,7 @@ Customize TBS options by setting CMake variables before including the sub-direct
 ```cmake
 set(TBS_MT ON)          # Enable multithreading
 set(TBS_USE_SSE2 ON)    # Enable SSE2 support
-set(TBS_USE_AVX ON)    # Enable SSE2 support
+set(TBS_USE_AVX ON)     # Enable AVX support
 ```
 
 Simply include the `TBS.hpp` header file in your project
