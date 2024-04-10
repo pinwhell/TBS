@@ -465,7 +465,8 @@ namespace TBS {
 						continue;
 
 					// At this point seems we are searching for a single result
-					// lets break turn off the searching & break
+					// lets report finished state for the shared state & break 
+					// current search.
 
 					desc.mShared.mFinished = true;
 					return false;
