@@ -1,12 +1,33 @@
 #pragma once
 
-#include <string>
-#include <functional>
-#include <sstream>
-#include <unordered_map>
-#include <memory>
-#include <vector>
-#include <unordered_set>
+#ifdef TBS_USE_ETL
+
+#include <etl/to_string.h>
+
+#ifndef TBS_ETL_CONTAINER_MAX_SIZE
+#define TBS_ETL_CONTAINER_MAX_SIZE 256
+#endif
+
+#ifndef TBS_ETL_STRING_MAX_SIZE
+#define TBS_ETL_STRING_MAX_SIZE 256
+#endif
+
+#define STL_ETL(stl,etl) etl
+#define TBS_STL_INC(x) <etl/##x.h>
+
+#else
+#define STL_ETL(stl,etl) stl
+#define TBS_STL_INC(x) <##x>
+#endif
+
+#include TBS_STL_INC(string)
+#include TBS_STL_INC(functional)
+#include TBS_STL_INC(unordered_map)
+#include TBS_STL_INC(memory)
+#include TBS_STL_INC(vector)
+#include TBS_STL_INC(unordered_set)
+#include STL_ETL(<sstream>, <etl/string_stream.h>)
+#include STL_ETL(<functional>, <etl/delegate.h>)
 
 #ifdef TBS_MT
 #include <thread>
@@ -49,6 +70,42 @@ namespace TBS {
 	using UShort = unsigned short;
 	using ULong = unsigned long;
 	using UPtr = uintptr_t;
+
+#ifdef TBS_USE_ETL
+	template<typename T, typename K>
+	using UMap = etl::unordered_map<T, K, TBS_ETL_CONTAINER_MAX_SIZE>;
+
+	template<typename T>
+	using USet = etl::unordered_set<T, TBS_ETL_CONTAINER_MAX_SIZE>;
+
+	template<typename T>
+	using Vector = etl::vector<T, TBS_ETL_CONTAINER_MAX_SIZE>;
+
+	template<typename T>
+	using UniquePtr = etl::unique_ptr<T>;
+
+	using String = typename etl::string<TBS_ETL_STRING_MAX_SIZE>;
+
+	template<typename T>
+	using Function = etl::delegate<T>;
+#else
+	template<typename T, typename K>
+	using UMap = std::unordered_map<T, K>;
+
+	template<typename T>
+	using USet = std::unordered_set<T>;
+
+	template<typename T>
+	using Vector = std::vector<T>;
+
+	template<typename T>
+	using UniquePtr = std::unique_ptr<T>;
+
+	using String = std::string;
+
+	template<typename T>
+	using Function = std::function<T>;
+#endif
 
 	/*
 		Assumed to be 0x1000 for simplicity
@@ -106,7 +163,7 @@ namespace TBS {
 			}
 
 		private:
-			std::vector<std::thread> mWorkers;
+			Vector<std::thread> mWorkers;
 			std::queue<std::function<void()>> mTasks;
 			std::mutex mTasksMtx;
 			std::condition_variable mWorkersCondVar;
@@ -115,7 +172,41 @@ namespace TBS {
 	}
 #endif
 
+	U64 StringLength(const char* s)
+	{
+		for (const char* i = s; ; i++)
+		{
+			if (!*i)
+				return (U64)(i - s);
+		}
+
+		return 0; // Should Never Get Here
+	}
+
 	namespace Memory {
+
+		UByte Bits4FromChar(char hex)
+		{
+			if ('0' <= hex && hex <= '9') {
+				return hex - '0';
+			}
+			else if ('A' <= hex && hex <= 'F') {
+				return hex - 'A' + 10;
+			}
+			else if ('a' <= hex && hex <= 'f') {
+				return hex - 'a' + 10;
+			}
+
+			return 0;
+		}
+
+		UByte ByteFromString(const char* byteStr)
+		{
+			UByte high = Bits4FromChar(byteStr[0]);
+			UByte low = Bits4FromChar(byteStr[1]);
+
+			return (high << 4) | low;
+		}
 
 		inline bool CompareWithMaskWord(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
 			// UPtr ==> Platform Word Length
@@ -317,7 +408,7 @@ namespace TBS {
 	namespace Pattern
 	{
 		using Result = TBS_RESULT_TYPE;
-		using Results = std::vector<Result>;
+		using Results = Vector<Result>;
 
 		struct ParseResult {
 			ParseResult()
@@ -341,7 +432,7 @@ namespace TBS {
 			if (_pattern == nullptr || mask == nullptr)
 				return false;
 
-			size_t patternLen = strlen(mask);
+			size_t patternLen = StringLength(mask);
 
 			result.mPattern.resize(patternLen);
 			result.mWildcardMask.resize(patternLen);
@@ -361,38 +452,43 @@ namespace TBS {
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Parse(const std::string& pattern, ParseResult& result)
+		inline bool Parse(const String& pattern, ParseResult& result)
 		{
 			result = ParseResult();
 
 			if (pattern.empty())
 				return true;
 
-			std::stringstream ss(pattern);
+			const char* c = pattern.c_str();
 
-			while (!ss.eof())
+			while (*c)
 			{
-				std::string str;
-				ss >> str;
+				String str;
+				
+				for (; *c && *c == ' '; c++)
+					;
+
+				for(; *c && *c != ' ' ; c++)
+					str.push_back(*c);
 
 				if (str.size() > 2)
 					return false;
 
 				// At this point, current pattern byte structure good so far
 
-				bool bAnyWildCard = str.find("?") != std::string::npos;
+				bool bAnyWildCard = str.find("?") != String::npos;
 
 				if (!bAnyWildCard)
 				{
 					// Not Wilcarding this byte
-					result.mPattern.emplace_back(UByte(strtoull(str.c_str(), nullptr, 16)));
+					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
 					result.mWildcardMask.emplace_back(UByte(0x00ull));
 					continue;
 				}
 
 				// At this point, current Byte is wildcarded
 
-				bool bFullByteWildcard = str.find("??") != std::string::npos || (bAnyWildCard && str.size() == 1);
+				bool bFullByteWildcard = str.find("??") != String::npos || (bAnyWildCard && str.size() == 1);
 
 				if (bFullByteWildcard)
 				{
@@ -408,21 +504,21 @@ namespace TBS {
 				{
 					// At this point, we are dealing with High Part of Byte wildcarding "?X"
 					str[0] = '0';
-					result.mPattern.emplace_back(UByte(strtoull(str.c_str(), nullptr, 16)));
+					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
 					result.mWildcardMask.emplace_back(UByte(0xF0u));
 					continue;
 				}
 
 				// At this point, we are dealing with Low Part of Byte wildcarding "X?"
 				str[1] = '0';
-				result.mPattern.emplace_back(UByte(strtoull(str.c_str(), nullptr, 16)));
+				result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
 				result.mWildcardMask.emplace_back(UByte(0x0Fu));
 			}
 
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Valid(const std::string& pattern)
+		inline bool Valid(const String& pattern)
 		{
 			ParseResult res;
 
@@ -442,7 +538,7 @@ namespace TBS {
 		};
 
 		struct Description {
-			using ResultTransformer = std::function<Result(Description&, Result)>;
+			using ResultTransformer = Function<Result(Description&, Result)>;
 			using SearchSlice = Memory::Slice<const UByte*>;
 
 			struct Shared {
@@ -487,17 +583,17 @@ namespace TBS {
 				ResultAccesor mResultAccesor;
 			};
 
-			Description(Shared& shared, const std::string& uid, const UByte* searchStart, const UByte* searchEnd,
-				const std::vector<ResultTransformer>& transformers, const std::string& pattern)
+			Description(Shared& shared, const String& uid, const UByte* searchStart, const UByte* searchEnd,
+				const Vector<ResultTransformer>& transformers, const String& pattern)
 				: Description(shared, uid, searchStart, searchEnd, transformers)
 			{
 				Parse(pattern, mParsed);
 			}
 
 			Description(
-				Shared& shared, const std::string& uid,
+				Shared& shared, const String& uid,
 				const UByte* searchStart, const UByte* searchEnd,
-				const std::vector<ResultTransformer>& transformers, const void* _pattern, const char* mask)
+				const Vector<ResultTransformer>& transformers, const void* _pattern, const char* mask)
 				: Description(shared, uid, searchStart, searchEnd, transformers)
 			{
 				Parse(_pattern, mask, mParsed);
@@ -509,8 +605,8 @@ namespace TBS {
 			}
 
 			Shared& mShared;
-			std::string mUID;
-			std::vector<ResultTransformer> mTransforms;
+			String mUID;
+			Vector<ResultTransformer> mTransforms;
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
 			const UByte* mLastSearchPos;
@@ -518,8 +614,8 @@ namespace TBS {
 
 		private:
 
-			Description(Shared& shared, const std::string& uid, const UByte* searchStart, const UByte* searchEnd,
-				const std::vector<ResultTransformer>& transformers)
+			Description(Shared& shared, const String& uid, const UByte* searchStart, const UByte* searchEnd,
+				const Vector<ResultTransformer>& transformers)
 				: mShared(shared)
 				, mUID(uid)
 				, mTransforms(transformers)
@@ -555,8 +651,8 @@ namespace TBS {
 
 				// At this point, match is properly user transformed
 				// lets report it
-#ifdef TBS_MT
 				{
+#ifdef TBS_MT
 					std::lock_guard<std::mutex> resultReportLck(desc.mShared.mMutex);
 #endif
 
@@ -577,9 +673,7 @@ namespace TBS {
 
 					desc.mShared.mFinished = true;
 					return false;
-#ifdef TBS_MT
 				}
-#endif
 			}
 
 			++desc.mCurrentSearchRange;
@@ -593,7 +687,7 @@ namespace TBS {
 	namespace Pattern {
 		struct DescriptionBuilder {
 
-			DescriptionBuilder(std::unordered_map<std::string, std::unique_ptr<Pattern::SharedDescription>>& sharedDescriptions)
+			DescriptionBuilder(UMap<String, UniquePtr<Pattern::SharedDescription>>& sharedDescriptions)
 				: mSharedDescriptions(sharedDescriptions)
 				, mScanStart(0)
 				, mScanEnd(0)
@@ -602,7 +696,7 @@ namespace TBS {
 				, mRawMask(0)
 			{}
 
-			DescriptionBuilder& setPattern(const std::string& pattern)
+			DescriptionBuilder& setPattern(const String& pattern)
 			{
 				mPattern = pattern;
 
@@ -619,7 +713,13 @@ namespace TBS {
 				if (!mUID.empty())
 					return *this;
 
+#ifdef TBS_USE_ETL
+				TBS::String uid;
+				uid = etl::to_string((UPtr)pattern, uid);
+				return setUID(uid);
+#else
 				return setUID(std::to_string((UPtr)pattern));
+#endif
 			}
 
 			DescriptionBuilder& setMask(const char* mask)
@@ -628,7 +728,7 @@ namespace TBS {
 				return *this;
 			}
 
-			DescriptionBuilder& setUID(const std::string& uid)
+			DescriptionBuilder& setUID(const String& uid)
 			{
 				mUID = uid;
 				return *this;
@@ -680,7 +780,7 @@ namespace TBS {
 				}
 
 				if (mSharedDescriptions.find(mUID) == mSharedDescriptions.end())
-					mSharedDescriptions[mUID] = std::unique_ptr<SharedDescription>(new SharedDescription(mScanType));
+					mSharedDescriptions[mUID] = UniquePtr<SharedDescription>(new SharedDescription(mScanType));
 
 				if (mRawPattern && mRawMask)
 					return Description(*mSharedDescriptions[mUID], mUID, mScanStart, mScanEnd, mTransformers, mRawPattern, mRawMask);
@@ -689,15 +789,15 @@ namespace TBS {
 			}
 
 		private:
-			std::unordered_map<std::string, std::unique_ptr<Pattern::SharedDescription>>& mSharedDescriptions;
+			UMap<String, UniquePtr<Pattern::SharedDescription>>& mSharedDescriptions;
 			EScan mScanType;
-			std::string mPattern;
+			String mPattern;
 			const void* mRawPattern;
 			const char* mRawMask;
-			std::string mUID;
+			String mUID;
 			const UByte* mScanStart;
 			const UByte* mScanEnd;
-			std::vector<ResultTransformer> mTransformers;
+			Vector<ResultTransformer> mTransformers;
 		};
 	}
 
@@ -726,7 +826,7 @@ namespace TBS {
 				.setScanEnd(mDefaultScanEnd);
 		}
 
-		Pattern::SharedResultAccesor operator[](const std::string& uid) const
+		Pattern::SharedResultAccesor operator[](const String& uid) const
 		{
 			if (mSharedDescriptions.find(uid) != mSharedDescriptions.end())
 				return *(mSharedDescriptions.at(uid));
@@ -738,13 +838,13 @@ namespace TBS {
 
 		const UByte* mDefaultScanStart;
 		const UByte* mDefaultScanEnd;
-		std::unordered_map<std::string, std::unique_ptr<Pattern::SharedDescription>> mSharedDescriptions;
-		std::vector<Pattern::Description> mDescriptionts;
+		UMap<String, UniquePtr<Pattern::SharedDescription>> mSharedDescriptions;
+		Vector<Pattern::Description> mDescriptionts;
 	};
 
 	bool Scan(State& state)
 	{
-		std::unordered_set<std::string> uidStillSearching;
+		USet<String> uidStillSearching;
 #ifdef TBS_MT
 		std::mutex uidStillSearchingMtx;
 #endif

@@ -36,7 +36,7 @@ TEST_CASE("Pattern Parsing") {
 TEST_CASE("Memory Comparing Masked")
 {
 	struct MemoryCompareTest {
-		std::string mPattern;
+		TBS::String mPattern;
 		const UByte* mTestCase;
 		size_t mMaskExpectedLength;
 		size_t mPatternExpectedLength;
