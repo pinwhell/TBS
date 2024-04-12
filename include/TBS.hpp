@@ -13,7 +13,7 @@
 #endif
 
 #define STL_ETL(stl,etl) etl
-#define TBS_STL_INC(x) <etl/##x.h>
+#define TBS_STL_INC(x) STL_ETL(<x>, <etl/x.h>)
 
 #else
 #define STL_ETL(stl,etl) stl
@@ -21,12 +21,10 @@
 #endif
 
 #include TBS_STL_INC(string)
-#include TBS_STL_INC(functional)
 #include TBS_STL_INC(unordered_map)
+#include TBS_STL_INC(unordered_set)
 #include TBS_STL_INC(memory)
 #include TBS_STL_INC(vector)
-#include TBS_STL_INC(unordered_set)
-#include STL_ETL(<sstream>, <etl/string_stream.h>)
 #include STL_ETL(<functional>, <etl/delegate.h>)
 
 #ifdef TBS_MT
@@ -420,8 +418,8 @@ namespace TBS {
 				return mParseSuccess;
 			}
 
-			std::vector<UByte> mPattern;
-			std::vector<UByte> mWildcardMask;
+			Vector<UByte> mPattern;
+			Vector<UByte> mWildcardMask;
 			bool mParseSuccess;
 		};
 
