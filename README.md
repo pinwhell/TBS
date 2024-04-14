@@ -28,7 +28,7 @@ int main() {
         .setPattern("00 FF ?? 12")
         .setScanStart(0x10000000)
         .setScanEnd(0x20000000)
-        .AddTransformer([](TBS::Pattern::Description& desc, TBS::U64 result) -> TBS::U64 {
+        .AddTransformer([](auto& desc, TBS::Pattern::Result result) -> TBS::Pattern::Result {
           // Middleware for results found
           return result;
         })
