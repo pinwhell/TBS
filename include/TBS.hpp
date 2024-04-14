@@ -686,9 +686,10 @@ namespace TBS {
 	}
 
 	namespace Pattern {
+		template<U32 SHAREDDESCS_CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
 		struct DescriptionBuilder {
 
-			DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>>& sharedDescriptions)
+			DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY>& sharedDescriptions)
 				: mSharedDescriptions(sharedDescriptions)
 				, mScanStart(0)
 				, mScanEnd(0)
@@ -790,7 +791,7 @@ namespace TBS {
 			}
 
 		private:
-			UMap<String<>, UniquePtr<Pattern::SharedDescription>>& mSharedDescriptions;
+			UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY>& mSharedDescriptions;
 			EScan mScanType;
 			String<> mPattern;
 			const void* mRawPattern;
@@ -802,7 +803,10 @@ namespace TBS {
 		};
 	}
 
+	template<U64 SHAREDDESCS_CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE, U64 DESCS_CAPACITY = SHAREDDESCS_CAPACITY * 2>
 	struct State {
+
+		using DescriptionBuilderT = Pattern::DescriptionBuilder<SHAREDDESCS_CAPACITY>;
 
 		State()
 			: State(nullptr, nullptr)
@@ -820,9 +824,9 @@ namespace TBS {
 			return *this;
 		}
 
-		Pattern::DescriptionBuilder PatternBuilder()
+		DescriptionBuilderT PatternBuilder()
 		{
-			return Pattern::DescriptionBuilder(mSharedDescriptions)
+			return DescriptionBuilderT(mSharedDescriptions)
 				.setScanStart(mDefaultScanStart)
 				.setScanEnd(mDefaultScanEnd);
 		}
@@ -839,11 +843,12 @@ namespace TBS {
 
 		const UByte* mDefaultScanStart;
 		const UByte* mDefaultScanEnd;
-		UMap<String<>, UniquePtr<Pattern::SharedDescription>> mSharedDescriptions;
-		Vector<Pattern::Description> mDescriptionts;
+		UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY> mSharedDescriptions;
+		Vector<Pattern::Description, DESCS_CAPACITY> mDescriptionts;
 	};
 
-	bool Scan(State& state)
+	template<typename StateT>
+	bool Scan(StateT& state)
 	{
 		USet<String<>> uidStillSearching;
 #ifdef TBS_MT

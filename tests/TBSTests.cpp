@@ -151,7 +151,7 @@ TEST_CASE("Pattern Sliced Scan Test")
 
 	// create the state
 
-	State state(buff, buff + TESTBUFF_SIZE);
+	State<10> state(buff, buff + TESTBUFF_SIZE);
 
 	// lets add patterns guranteed not to be found (so we can emulate scannig over the entire `buff`)
 
@@ -205,7 +205,7 @@ TEST_CASE("Pattern Scan #1")
 		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
 	};
 
-	State state(testCase, testCase + sizeof(testCase));
+	State<> state(testCase, testCase + sizeof(testCase));
 
 	state.AddPattern(
 		state
@@ -278,7 +278,7 @@ TEST_CASE("Pattern Scan #2")
 	*(size_t*)(buffer1 + strRelOff1) = strOff1 - strRelOff1;
 	*(size_t*)(buffer2 + strRelOff2) = strOff2 - strRelOff2;
 
-	State state{};
+	State<> state{};
 	{
 		auto builder = state
 			.PatternBuilder()
@@ -331,7 +331,7 @@ TEST_CASE("Pattern Scan #3")
 		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
 	};
 
-	State state(testCase, testCase + sizeof(testCase));
+	State<25> state(testCase, testCase + sizeof(testCase));
 
 	state.AddPattern(
 		state
