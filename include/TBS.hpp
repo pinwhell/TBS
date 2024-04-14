@@ -5,11 +5,11 @@
 #include <etl/to_string.h>
 
 #ifndef TBS_ETL_CONTAINER_MAX_SIZE
-#define TBS_ETL_CONTAINER_MAX_SIZE 256
+#define TBS_ETL_CONTAINER_MAX_SIZE 16
 #endif
 
 #ifndef TBS_ETL_STRING_MAX_SIZE
-#define TBS_ETL_STRING_MAX_SIZE 256
+#define TBS_ETL_STRING_MAX_SIZE 128
 #endif
 
 #define STL_ETL(stl,etl) etl
@@ -72,19 +72,20 @@ namespace TBS {
 	using UPtr = uintptr_t;
 
 #ifdef TBS_USE_ETL
-	template<typename T, typename K>
-	using UMap = etl::unordered_map<T, K, TBS_ETL_CONTAINER_MAX_SIZE>;
+	template<typename T, typename K, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	using UMap = etl::unordered_map<T, K, CAPACITY>;
 
-	template<typename T>
-	using USet = etl::unordered_set<T, TBS_ETL_CONTAINER_MAX_SIZE>;
+	template<typename T, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	using USet = etl::unordered_set<T, CAPACITY>;
 
-	template<typename T>
-	using Vector = etl::vector<T, TBS_ETL_CONTAINER_MAX_SIZE>;
+	template<typename T, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	using Vector = etl::vector<T, CAPACITY>;
 
 	template<typename T>
 	using UniquePtr = etl::unique_ptr<T>;
 
-	using String = typename etl::string<TBS_ETL_STRING_MAX_SIZE>;
+	template<U64 CAPACITY = TBS_ETL_STRING_MAX_SIZE>
+	using String = etl::string<CAPACITY>;
 
 	template<typename T>
 	using Function = etl::delegate<T>;
@@ -452,7 +453,7 @@ namespace TBS {
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Parse(const String& pattern, ParseResult& result)
+		inline bool Parse(const String<>& pattern, ParseResult& result)
 		{
 			result = ParseResult();
 
@@ -463,7 +464,7 @@ namespace TBS {
 
 			while (*c)
 			{
-				String str;
+				String<> str;
 				
 				for (; *c && *c == ' '; c++)
 					;
@@ -476,7 +477,7 @@ namespace TBS {
 
 				// At this point, current pattern byte structure good so far
 
-				bool bAnyWildCard = str.find("?") != String::npos;
+				bool bAnyWildCard = str.find("?") != String<>::npos;
 
 				if (!bAnyWildCard)
 				{
@@ -488,7 +489,7 @@ namespace TBS {
 
 				// At this point, current Byte is wildcarded
 
-				bool bFullByteWildcard = str.find("??") != String::npos || (bAnyWildCard && str.size() == 1);
+				bool bFullByteWildcard = str.find("??") != String<>::npos || (bAnyWildCard && str.size() == 1);
 
 				if (bFullByteWildcard)
 				{
@@ -518,7 +519,7 @@ namespace TBS {
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Valid(const String& pattern)
+		inline bool Valid(const String<>& pattern)
 		{
 			ParseResult res;
 
@@ -583,15 +584,15 @@ namespace TBS {
 				ResultAccesor mResultAccesor;
 			};
 
-			Description(Shared& shared, const String& uid, const UByte* searchStart, const UByte* searchEnd,
-				const Vector<ResultTransformer>& transformers, const String& pattern)
+			Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
+				const Vector<ResultTransformer>& transformers, const String<>& pattern)
 				: Description(shared, uid, searchStart, searchEnd, transformers)
 			{
 				Parse(pattern, mParsed);
 			}
 
 			Description(
-				Shared& shared, const String& uid,
+				Shared& shared, const String<>& uid,
 				const UByte* searchStart, const UByte* searchEnd,
 				const Vector<ResultTransformer>& transformers, const void* _pattern, const char* mask)
 				: Description(shared, uid, searchStart, searchEnd, transformers)
@@ -605,7 +606,7 @@ namespace TBS {
 			}
 
 			Shared& mShared;
-			String mUID;
+			String<> mUID;
 			Vector<ResultTransformer> mTransforms;
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
@@ -614,7 +615,7 @@ namespace TBS {
 
 		private:
 
-			Description(Shared& shared, const String& uid, const UByte* searchStart, const UByte* searchEnd,
+			Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
 				const Vector<ResultTransformer>& transformers)
 				: mShared(shared)
 				, mUID(uid)
@@ -687,7 +688,7 @@ namespace TBS {
 	namespace Pattern {
 		struct DescriptionBuilder {
 
-			DescriptionBuilder(UMap<String, UniquePtr<Pattern::SharedDescription>>& sharedDescriptions)
+			DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>>& sharedDescriptions)
 				: mSharedDescriptions(sharedDescriptions)
 				, mScanStart(0)
 				, mScanEnd(0)
@@ -696,7 +697,7 @@ namespace TBS {
 				, mRawMask(0)
 			{}
 
-			DescriptionBuilder& setPattern(const String& pattern)
+			DescriptionBuilder& setPattern(const String<>& pattern)
 			{
 				mPattern = pattern;
 
@@ -714,7 +715,7 @@ namespace TBS {
 					return *this;
 
 #ifdef TBS_USE_ETL
-				TBS::String uid;
+				TBS::String<> uid;
 				uid = etl::to_string((UPtr)pattern, uid);
 				return setUID(uid);
 #else
@@ -728,7 +729,7 @@ namespace TBS {
 				return *this;
 			}
 
-			DescriptionBuilder& setUID(const String& uid)
+			DescriptionBuilder& setUID(const String<>& uid)
 			{
 				mUID = uid;
 				return *this;
@@ -789,12 +790,12 @@ namespace TBS {
 			}
 
 		private:
-			UMap<String, UniquePtr<Pattern::SharedDescription>>& mSharedDescriptions;
+			UMap<String<>, UniquePtr<Pattern::SharedDescription>>& mSharedDescriptions;
 			EScan mScanType;
-			String mPattern;
+			String<> mPattern;
 			const void* mRawPattern;
 			const char* mRawMask;
-			String mUID;
+			String<> mUID;
 			const UByte* mScanStart;
 			const UByte* mScanEnd;
 			Vector<ResultTransformer> mTransformers;
@@ -826,7 +827,7 @@ namespace TBS {
 				.setScanEnd(mDefaultScanEnd);
 		}
 
-		Pattern::SharedResultAccesor operator[](const String& uid) const
+		Pattern::SharedResultAccesor operator[](const String<>& uid) const
 		{
 			if (mSharedDescriptions.find(uid) != mSharedDescriptions.end())
 				return *(mSharedDescriptions.at(uid));
@@ -838,13 +839,13 @@ namespace TBS {
 
 		const UByte* mDefaultScanStart;
 		const UByte* mDefaultScanEnd;
-		UMap<String, UniquePtr<Pattern::SharedDescription>> mSharedDescriptions;
+		UMap<String<>, UniquePtr<Pattern::SharedDescription>> mSharedDescriptions;
 		Vector<Pattern::Description> mDescriptionts;
 	};
 
 	bool Scan(State& state)
 	{
-		USet<String> uidStillSearching;
+		USet<String<>> uidStillSearching;
 #ifdef TBS_MT
 		std::mutex uidStillSearchingMtx;
 #endif
