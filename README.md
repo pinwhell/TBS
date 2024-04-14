@@ -19,7 +19,7 @@ Features
 
 int main() {
     // Create a state object
-    TBS::State state;
+    TBS::State<> state;
 
     // Add patterns to the state
     state.AddPattern(
