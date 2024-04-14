@@ -1,16 +1,17 @@
 #pragma once
 
+#ifndef TBS_CONTAINER_MAX_SIZE
+#define TBS_CONTAINER_MAX_SIZE 16
+#endif
+
+#ifndef TBS_STRING_MAX_SIZE
+#define TBS_STRING_MAX_SIZE 128
+#endif
+
 #ifdef TBS_USE_ETL
 
 #include <etl/to_string.h>
 
-#ifndef TBS_ETL_CONTAINER_MAX_SIZE
-#define TBS_ETL_CONTAINER_MAX_SIZE 16
-#endif
-
-#ifndef TBS_ETL_STRING_MAX_SIZE
-#define TBS_ETL_STRING_MAX_SIZE 128
-#endif
 
 #define STL_ETL(stl,etl) etl
 #define TBS_STL_INC(x) STL_ETL(<x>, <etl/x.h>)
@@ -70,36 +71,37 @@ namespace TBS {
 	using UPtr = uintptr_t;
 
 #ifdef TBS_USE_ETL
-	template<typename T, typename K, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	template<typename T, typename K, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using UMap = etl::unordered_map<T, K, CAPACITY>;
 
-	template<typename T, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	template<typename T, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using USet = etl::unordered_set<T, CAPACITY>;
 
-	template<typename T, U64 CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+	template<typename T, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using Vector = etl::vector<T, CAPACITY>;
 
 	template<typename T>
 	using UniquePtr = etl::unique_ptr<T>;
 
-	template<U64 CAPACITY = TBS_ETL_STRING_MAX_SIZE>
+	template<U64 CAPACITY = TBS_STRING_MAX_SIZE>
 	using String = etl::string<CAPACITY>;
 
 	template<typename T>
 	using Function = etl::delegate<T>;
 #else
-	template<typename T, typename K>
+	template<typename T, typename K, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using UMap = std::unordered_map<T, K>;
 
-	template<typename T>
+	template<typename T, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using USet = std::unordered_set<T>;
 
-	template<typename T>
+	template<typename T, U64 CAPACITY = TBS_CONTAINER_MAX_SIZE>
 	using Vector = std::vector<T>;
 
 	template<typename T>
 	using UniquePtr = std::unique_ptr<T>;
 
+	template<U64 CAPACITY = TBS_STRING_MAX_SIZE>
 	using String = std::string;
 
 	template<typename T>
@@ -684,7 +686,7 @@ namespace TBS {
 	}
 
 	namespace Pattern {
-		template<U32 SHAREDDESCS_CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE>
+		template<U32 SHAREDDESCS_CAPACITY = TBS_CONTAINER_MAX_SIZE>
 		struct DescriptionBuilder {
 
 			DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY>& sharedDescriptions)
@@ -801,7 +803,7 @@ namespace TBS {
 		};
 	}
 
-	template<U64 SHAREDDESCS_CAPACITY = TBS_ETL_CONTAINER_MAX_SIZE, U64 DESCS_CAPACITY = SHAREDDESCS_CAPACITY * 2>
+	template<U64 SHAREDDESCS_CAPACITY = TBS_CONTAINER_MAX_SIZE, U64 DESCS_CAPACITY = SHAREDDESCS_CAPACITY * 2>
 	struct State {
 
 		using DescriptionBuilderT = Pattern::DescriptionBuilder<SHAREDDESCS_CAPACITY>;
