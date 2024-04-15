@@ -1,7 +1,6 @@
 # TBS Library
 
-**TBS (Thunder-Byte-Scan)** is a C++ **Single Header** library designed to provide efficient memory pattern scanning with multithreading and SIMD support. It offers a high-performance framework for scanning memory patterns efficiently, making it valuable for applications requiring fast pattern matching.
-Features
+**TBS (Thunder-Byte-Scan)** stands as a **cross-platform C++ single-header library**, offering robust memory pattern scanning capabilities enriched with SIMD (Single Instruction, Multiple Data) and multithreading support. Engineered for efficiency, it empowers applications with lightning-fast pattern matching across diverse architectures and platforms, ensuring high-performance operation and compatibility across a spectrum of environments.
 
     - Efficient memory pattern scanning
     - Multithreading support for improved performance
@@ -28,7 +27,7 @@ int main() {
         .setPattern("00 FF ?? 12")
         .setScanStart(0x10000000)
         .setScanEnd(0x20000000)
-        .AddTransformer([](auto& desc, TBS::Pattern::Result result) -> TBS::Pattern::Result {
+        .AddTransformer([](TBS::Pattern::Description& desc, TBS::Pattern::Result result) -> TBS::Pattern::Result {
           // Middleware for results found
           return result;
         })
@@ -73,6 +72,7 @@ Customize TBS options by setting CMake variables before including the sub-direct
 set(TBS_MT ON)          # Enable multithreading
 set(TBS_USE_SSE2 ON)    # Enable SSE2 support
 set(TBS_USE_AVX ON)     # Enable AVX support
+set(TBS_USE_ETL OFF)    # Enable ETL Integration Usage by TBS 
 ```
 
 Simply include the `TBS.hpp` header file in your project
