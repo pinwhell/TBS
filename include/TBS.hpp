@@ -649,7 +649,7 @@ namespace TBS {
 
 				// At this point, we found a match
 
-				for (auto transform : desc.mTransforms)
+				for (const auto& transform : desc.mTransforms)
 					currMatch = transform(desc, currMatch);
 
 				// At this point, match is properly user transformed
