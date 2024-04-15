@@ -18,7 +18,9 @@
 
 #else
 #define STL_ETL(stl,etl) stl
-#define TBS_STL_INC(x) <##x>
+#define TBS_STL_INC(x) < x >
+
+#include <string.h>
 #endif
 
 #include TBS_STL_INC(string)
@@ -173,7 +175,7 @@ namespace TBS {
 	}
 #endif
 
-	U64 StringLength(const char* s)
+	static U64 StringLength(const char* s)
 	{
 		for (const char* i = s; ; i++)
 		{
@@ -186,7 +188,7 @@ namespace TBS {
 
 	namespace Memory {
 
-		UByte Bits4FromChar(char hex)
+		static UByte Bits4FromChar(char hex)
 		{
 			if ('0' <= hex && hex <= '9') {
 				return hex - '0';
@@ -201,7 +203,7 @@ namespace TBS {
 			return 0;
 		}
 
-		UByte ByteFromString(const char* byteStr)
+		static UByte ByteFromString(const char* byteStr)
 		{
 			UByte high = Bits4FromChar(byteStr[0]);
 			UByte low = Bits4FromChar(byteStr[1]);
@@ -318,19 +320,19 @@ namespace TBS {
 			using PtrTypeT = T;
 			using SliceT = Slice<T>;
 
-			Slice(PtrTypeT start, PtrTypeT end)
+			inline Slice(PtrTypeT start, PtrTypeT end)
 				: mStart(start)
 				, mEnd(end)
 			{}
 
-			bool operator==(const SliceT& other) const
+			inline bool operator==(const SliceT& other) const
 			{
 				return
 					mStart == other.mStart &&
 					mEnd == other.mEnd;
 			}
 
-			bool operator!=(const SliceT& other) const
+			inline bool operator!=(const SliceT& other) const
 			{
 				return !(*this == other);
 			}
@@ -339,14 +341,14 @@ namespace TBS {
 			PtrTypeT mEnd;
 
 			struct Container {
-				Container(PtrTypeT start, PtrTypeT end, U64 step)
+				inline Container(PtrTypeT start, PtrTypeT end, U64 step)
 					: mStart(start)
 					, mEnd(end < start ? start : end)
 					, mStep(step)
 				{}
 
 				struct Iterator {
-					Iterator(PtrTypeT start, U64 step, PtrTypeT end)
+					inline Iterator(PtrTypeT start, U64 step, PtrTypeT end)
 						: mSlice(SliceT(start, (PtrTypeT)((UByte*)start + step)))
 						, mStep(step)
 						, mEnd(end)
@@ -354,12 +356,12 @@ namespace TBS {
 						Normalize();
 					}
 
-					SliceT operator*() const
+					inline SliceT operator*() const
 					{
 						return mSlice;
 					}
 
-					void Normalize()
+					inline void Normalize()
 					{
 						if (mSlice.mStart > mEnd)
 							mSlice.mStart = mEnd;
@@ -368,7 +370,7 @@ namespace TBS {
 							mSlice.mEnd = mEnd;
 					}
 
-					Iterator& operator++()
+					inline Iterator& operator++()
 					{
 						mSlice.mStart = (PtrTypeT)((UByte*)mSlice.mStart + mStep);
 						mSlice.mEnd = (PtrTypeT)((UByte*)mSlice.mEnd + mStep);
@@ -378,11 +380,11 @@ namespace TBS {
 						return *this;
 					}
 
-					bool operator==(const Iterator& other) const {
+					inline bool operator==(const Iterator& other) const {
 						return mSlice == other.mSlice;
 					}
 
-					bool operator!=(const Iterator& other) const {
+					inline bool operator!=(const Iterator& other) const {
 						return !(*this == other);
 					}
 
@@ -391,11 +393,11 @@ namespace TBS {
 					U64 mStep;
 				};
 
-				Iterator begin() const {
+				inline Iterator begin() const {
 					return Iterator(mStart, mStep, mEnd);
 				}
 
-				Iterator end() const {
+				inline Iterator end() const {
 					return Iterator(mEnd, mStep, mEnd);
 				}
 
@@ -412,11 +414,11 @@ namespace TBS {
 		using Results = Vector<Result>;
 
 		struct ParseResult {
-			ParseResult()
+			inline ParseResult()
 				: mParseSuccess(false)
 			{}
 
-			operator bool()
+			inline operator bool()
 			{
 				return mParseSuccess;
 			}
@@ -426,7 +428,7 @@ namespace TBS {
 			bool mParseSuccess;
 		};
 
-		inline bool Parse(const void* _pattern, const char* mask, ParseResult& result)
+		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
 		{
 			result = ParseResult();
 
@@ -453,7 +455,7 @@ namespace TBS {
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Parse(const String<>& pattern, ParseResult& result)
+		static bool Parse(const String<>& pattern, ParseResult& result)
 		{
 			result = ParseResult();
 
@@ -519,14 +521,14 @@ namespace TBS {
 			return result.mParseSuccess = true;
 		}
 
-		inline bool Valid(const String<>& pattern)
+		static bool Valid(const String<>& pattern)
 		{
 			ParseResult res;
 
 			return Parse(pattern, res) && res;
 		}
 
-		inline bool Valid(const void* _pattern, const char* mask)
+		static bool Valid(const void* _pattern, const char* mask)
 		{
 			ParseResult res;
 
@@ -544,22 +546,22 @@ namespace TBS {
 
 			struct Shared {
 				struct ResultAccesor {
-					ResultAccesor(Shared& sharedDesc)
+					inline ResultAccesor(Shared& sharedDesc)
 						: mSharedDesc(sharedDesc)
 					{}
 
-					operator const Results& () const {
+					inline operator const Results& () const {
 						return ResultsGet();
 					}
 
-					operator Result () const {
+					inline operator Result () const {
 						if (mSharedDesc.mResult.size() < 1)
 							return 0;
 
 						return mSharedDesc.mResult[0];
 					}
 
-					const Results& ResultsGet() const
+					inline const Results& ResultsGet() const
 					{
 						return mSharedDesc.mResult;
 					}
@@ -567,7 +569,7 @@ namespace TBS {
 					Shared& mSharedDesc;
 				};
 
-				Shared(EScan scanType)
+				inline Shared(EScan scanType)
 					: mScanType(scanType)
 					, mResultAccesor(*this)
 					, mFinished(false)
@@ -584,14 +586,14 @@ namespace TBS {
 				ResultAccesor mResultAccesor;
 			};
 
-			Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
+			inline Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
 				const Vector<ResultTransformer>& transformers, const String<>& pattern)
 				: Description(shared, uid, searchStart, searchEnd, transformers)
 			{
 				Parse(pattern, mParsed);
 			}
 
-			Description(
+			inline Description(
 				Shared& shared, const String<>& uid,
 				const UByte* searchStart, const UByte* searchEnd,
 				const Vector<ResultTransformer>& transformers, const void* _pattern, const char* mask)
@@ -600,7 +602,7 @@ namespace TBS {
 				Parse(_pattern, mask, mParsed);
 			}
 
-			operator bool()
+			inline operator bool()
 			{
 				return mParsed;
 			}
@@ -615,7 +617,7 @@ namespace TBS {
 
 		private:
 
-			Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
+			inline Description(Shared& shared, const String<>& uid, const UByte* searchStart, const UByte* searchEnd,
 				const Vector<ResultTransformer>& transformers)
 				: mShared(shared)
 				, mUID(uid)
@@ -628,7 +630,7 @@ namespace TBS {
 
 		using ResultTransformer = Description::ResultTransformer;
 
-		inline bool Scan(Description& desc)
+		static bool Scan(Description& desc)
 		{
 			if (desc.mShared.mFinished ||
 				(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end()))
@@ -689,7 +691,7 @@ namespace TBS {
 		template<U32 SHAREDDESCS_CAPACITY = TBS_CONTAINER_MAX_SIZE>
 		struct DescriptionBuilder {
 
-			DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY>& sharedDescriptions)
+			inline DescriptionBuilder(UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY>& sharedDescriptions)
 				: mSharedDescriptions(sharedDescriptions)
 				, mScanStart(0)
 				, mScanEnd(0)
@@ -698,7 +700,7 @@ namespace TBS {
 				, mRawMask(0)
 			{}
 
-			DescriptionBuilder& setPattern(const String<>& pattern)
+			inline DescriptionBuilder& setPattern(const String<>& pattern)
 			{
 				mPattern = pattern;
 
@@ -708,7 +710,7 @@ namespace TBS {
 				return setUID(pattern);
 			}
 
-			DescriptionBuilder& setPatternRaw(const void* pattern)
+			inline DescriptionBuilder& setPatternRaw(const void* pattern)
 			{
 				mRawPattern = pattern;
 
@@ -724,55 +726,55 @@ namespace TBS {
 #endif
 			}
 
-			DescriptionBuilder& setMask(const char* mask)
+			inline DescriptionBuilder& setMask(const char* mask)
 			{
 				mRawMask = mask;
 				return *this;
 			}
 
-			DescriptionBuilder& setUID(const String<>& uid)
+			inline DescriptionBuilder& setUID(const String<>& uid)
 			{
 				mUID = uid;
 				return *this;
 			}
 
 			template<typename T>
-			DescriptionBuilder& setScanStart(T start)
+			inline DescriptionBuilder& setScanStart(T start)
 			{
 				mScanStart = (const UByte*)start;
 				return *this;
 			}
 
 			template<typename T>
-			DescriptionBuilder& setScanEnd(T end)
+			inline DescriptionBuilder& setScanEnd(T end)
 			{
 				mScanEnd = (const UByte*)end;
 				return *this;
 			}
 
-			DescriptionBuilder& AddTransformer(const Description::ResultTransformer& transformer)
+			inline DescriptionBuilder& AddTransformer(const Description::ResultTransformer& transformer)
 			{
 				mTransformers.emplace_back(transformer);
 				return *this;
 			}
 
-			DescriptionBuilder& setScanType(EScan type)
+			inline DescriptionBuilder& setScanType(EScan type)
 			{
 				mScanType = type;
 				return *this;
 			}
 
-			DescriptionBuilder& stopOnFirstMatch()
+			inline DescriptionBuilder& stopOnFirstMatch()
 			{
 				return setScanType(EScan::SCAN_FIRST);
 			}
 
-			DescriptionBuilder Clone() const
+			inline DescriptionBuilder Clone() const
 			{
 				return DescriptionBuilder(*this);
 			}
 
-			Description Build()
+			inline Description Build()
 			{
 				if (!(mRawPattern && mRawMask) && Pattern::Valid(mPattern) == false)
 				{
@@ -808,30 +810,30 @@ namespace TBS {
 
 		using DescriptionBuilderT = Pattern::DescriptionBuilder<SHAREDDESCS_CAPACITY>;
 
-		State()
+		inline State()
 			: State(nullptr, nullptr)
 		{}
 
 		template<typename T, typename K>
-		State(T defScanStart = (T)0, K defScanEnd = (K)0)
+		inline State(T defScanStart = (T)0, K defScanEnd = (K)0)
 			: mDefaultScanStart((const UByte*)defScanStart)
 			, mDefaultScanEnd((const UByte*)defScanEnd)
 		{}
 
-		State& AddPattern(Pattern::Description&& pattern)
+		inline State& AddPattern(Pattern::Description&& pattern)
 		{
 			mDescriptionts.emplace_back(pattern);
 			return *this;
 		}
 
-		DescriptionBuilderT PatternBuilder()
+		inline DescriptionBuilderT PatternBuilder()
 		{
 			return DescriptionBuilderT(mSharedDescriptions)
 				.setScanStart(mDefaultScanStart)
 				.setScanEnd(mDefaultScanEnd);
 		}
 
-		Pattern::SharedResultAccesor operator[](const String<>& uid) const
+		inline Pattern::SharedResultAccesor operator[](const String<>& uid) const
 		{
 			if (mSharedDescriptions.find(uid) != mSharedDescriptions.end())
 				return *(mSharedDescriptions.at(uid));
@@ -848,7 +850,7 @@ namespace TBS {
 	};
 
 	template<typename StateT>
-	bool Scan(StateT& state)
+	static bool Scan(StateT& state)
 	{
 		USet<String<>> uidStillSearching;
 #ifdef TBS_MT
