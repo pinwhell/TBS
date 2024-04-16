@@ -855,48 +855,46 @@ namespace TBS {
 	template<typename StateT>
 	static bool Scan(StateT& state)
 	{
-		USet<Pattern::Description*> currSearchingDescs;
+		USet<Pattern::Description*> doneSearchingDescs;
 
 #ifdef TBS_MT
-		std::mutex currSearchingDescsMtx;
+		std::mutex doneSearchingDescsMtx;
 #endif
-		// Initially Searching for all Descs.
 
-		for (Pattern::Description& description : state.mDescriptionts)
-			currSearchingDescs.insert(&description);
-
-		while (!currSearchingDescs.empty()) 
+		while (doneSearchingDescs.size() < state.mDescriptionts.size())
 		{
 #ifdef TBS_MT
 			Thread::Pool threadPool;
-
-			{
-				std::lock_guard<std::mutex> lck(currSearchingDescsMtx); // Protect the loop so no erasing happend 
-																		// while looping and enqueing the tasks
 #endif
-				for (Pattern::Description* description : currSearchingDescs)
+			for (Pattern::Description& _description : state.mDescriptionts)
+			{
+				Pattern::Description* description = &_description;
+
 				{
 #ifdef TBS_MT
-					threadPool.enqueue(
-						[&currSearchingDescs, &currSearchingDescsMtx](Pattern::Description* description)
-						{
-							if (Pattern::Scan(*description))
-								return;
-
-							std::lock_guard<std::mutex> lck(currSearchingDescsMtx);
-
-							currSearchingDescs.erase(description);
-						}, description);
-#else
-					if (Pattern::Scan(*description))
-						continue;
-
-					currSearchingDescs.erase(description);
+					std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
 #endif
+
+					if (doneSearchingDescs.find(description) != doneSearchingDescs.end())
+						continue;
 				}
 #ifdef TBS_MT
-			}
+				threadPool.enqueue(
+				[&doneSearchingDescs, &doneSearchingDescsMtx](Pattern::Description* description)
+				{
 #endif
+					if (Pattern::Scan(*description) == false)
+					{
+#ifdef TBS_MT
+						std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
+#endif
+						doneSearchingDescs.insert(description);
+					}
+
+#ifdef TBS_MT
+				}, description);
+#endif
+			}
 		}
 
 		state.mDescriptionts.clear();
