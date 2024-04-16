@@ -367,6 +367,45 @@ TEST_CASE("Pattern Scan #3")
 	CHECK(state["TestUID"] == 0xFFEEFFDD);
 }
 
+TEST_CASE("Pattern Scan #4")
+{
+	UByte testCase[] = {
+		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
+	};
+
+	State<> state(testCase, testCase + sizeof(testCase));
+
+	auto builder = state
+		.PatternBuilder()
+		.setUID("TestUID")
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+		return U64(((*(U32*)(res + 6))) & 0x00FF00FFull); // Just Picking 0xEE and 0xFF
+			})
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+				// expected to be 0xXXEEXXDD comming from previous transform
+				CHECK(res == 0x00EE00DDull);
+				return res | 0xFF00FF00ull; // expected to be 0xFFEEFFDD
+			});
+
+	state.AddPattern(
+		builder
+		.Clone()
+		.setPattern("AA FF BB EE CC ? DD ? EE AA FF")
+		.Build()
+				); // Negative (Should Fail)
+
+	state.AddPattern(
+		builder
+		.Clone()
+		.setPattern("AA ? BB ? CC ? DD ? EE ? FF")
+		.Build()
+				); // Positive Should Find
+
+	CHECK(Scan(state));
+	CHECK(state["TestUID"].ResultsGet().size() == 1);
+	CHECK(state["TestUID"] == 0xFFEEFFDD);
+}
+
 
 /*
 	wildCardMask expected to be 0xFF for byte that are wild carded and 0x0 for non-wildcarded bytes
