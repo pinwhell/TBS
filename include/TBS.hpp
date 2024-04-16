@@ -640,8 +640,11 @@ namespace TBS {
 
 			Description::SearchSlice currSearchnigRange = (*desc.mCurrentSearchRange);
 
-			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd && !desc.mShared.mFinished; i++)
+			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd; i++)
 			{
+				if (desc.mShared.mFinished)
+					return false;
+
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
 					continue;
 
@@ -680,7 +683,7 @@ namespace TBS {
 			}
 
 			++desc.mCurrentSearchRange;
-			return desc.mCurrentSearchRange != desc.mSearchRangeSlicer.end();
+			return !(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end());
 		}
 
 		using SharedDescription = Description::Shared;
@@ -852,47 +855,48 @@ namespace TBS {
 	template<typename StateT>
 	static bool Scan(StateT& state)
 	{
-		USet<String<>> uidStillSearching;
+		USet<Pattern::Description*> currSearchingDescs;
+
 #ifdef TBS_MT
-		std::mutex uidStillSearchingMtx;
+		std::mutex currSearchingDescsMtx;
 #endif
-		// Initially Searching for all UIDs.
+		// Initially Searching for all Descs.
 
 		for (Pattern::Description& description : state.mDescriptionts)
-			uidStillSearching.insert(description.mUID);
+			currSearchingDescs.insert(&description);
 
-		while (!uidStillSearching.empty()) {
+		while (!currSearchingDescs.empty()) 
+		{
 #ifdef TBS_MT
 			Thread::Pool threadPool;
-#endif
-			for (Pattern::Description& description : state.mDescriptionts)
+
 			{
+				std::lock_guard<std::mutex> lck(currSearchingDescsMtx); // Protect the loop so no erasing happend 
+																		// while looping and enqueing the tasks
+#endif
+				for (Pattern::Description* description : currSearchingDescs)
 				{
 #ifdef TBS_MT
-					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
-#endif
-					if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
-						continue;
-				}
+					threadPool.enqueue(
+						[&currSearchingDescs, &currSearchingDescsMtx](Pattern::Description* description)
+						{
+							if (Pattern::Scan(*description))
+								return;
 
-				// At this point, current UID still searching!
-#ifdef TBS_MT
-				threadPool.enqueue(
-					[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
-					{
-						if (Pattern::Scan(description))
-							return;
+							std::lock_guard<std::mutex> lck(currSearchingDescsMtx);
 
-						std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
-						uidStillSearching.erase(description.mUID);
-					}, description);
+							currSearchingDescs.erase(description);
+						}, description);
 #else
-				if (Pattern::Scan(description))
-					continue;
+					if (Pattern::Scan(*description))
+						continue;
 
-				uidStillSearching.erase(description.mUID);
+					currSearchingDescs.erase(description);
 #endif
+				}
+#ifdef TBS_MT
 			}
+#endif
 		}
 
 		state.mDescriptionts.clear();

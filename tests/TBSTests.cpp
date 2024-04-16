@@ -13,24 +13,36 @@ TEST_CASE("Pattern Parsing") {
 	CHECK(Pattern::Parse("AA ? BB ? CC ? DD ? EE ? FF", res));
 	CHECK_EQ(res.mWildcardMask.size(), 11);
 	CHECK_EQ(res.mPattern.size(), 11);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00", 11) == 0);
+
+	CHECK(Pattern::Parse("48 ? ? ? ? ? ? 48 ? ? ? 48 ? ? 25", res));
+	CHECK_EQ(res.mWildcardMask.size(), 15);
+	CHECK_EQ(res.mPattern.size(), 15);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\x00", 15) == 0);
 
 	CHECK(Pattern::Parse("AA ?? BB ? CC ?? DD ? EE ?? FF ??", res));
 	CHECK_EQ(res.mWildcardMask.size(), 12);
 	CHECK_EQ(res.mPattern.size(), 12);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF", 11) == 0);
+
 
 	CHECK_FALSE(Pattern::Parse("AA ??? BB ? CC ?? DD? ? EE ?? FF ??", res));
 	CHECK_EQ(res.mWildcardMask.size(), 1 /*Just 1 valid byte*/);
 	CHECK_EQ(res.mPattern.size(), 1 /*Just 1 valid byte*/);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00", 1) == 0);
 
 	CHECK_FALSE(Pattern::Parse("AA ? BB ?CC ? DD ?EE ? FF", res));
 	CHECK_EQ(res.mPattern.size(), 3 /*Just 3 valid bytes*/);
 	CHECK_EQ(res.mWildcardMask.size(), 3 /*Just 3 valid bytes*/);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00", 3) == 0);
+
 
 	const char testRawPattern[] = "\x10\x00\x30\x40\x00\x60";
 	const char testRawPatternMask[] = "x?xx?x";
 	CHECK(Pattern::Parse(testRawPattern, testRawPatternMask, res));
 	CHECK_EQ(res.mPattern.size(), sizeof(testRawPattern) - 1);
 	CHECK_EQ(res.mWildcardMask.size(), sizeof(testRawPatternMask) - 1);
+	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\x00\xFF\x00", 6) == 0);
 }
 
 TEST_CASE("Memory Comparing Masked")
@@ -349,6 +361,45 @@ TEST_CASE("Pattern Scan #3")
 			})
 				.Build()
 				);
+
+	CHECK(Scan(state));
+	CHECK(state["TestUID"].ResultsGet().size() == 1);
+	CHECK(state["TestUID"] == 0xFFEEFFDD);
+}
+
+TEST_CASE("Pattern Scan #4")
+{
+	UByte testCase[] = {
+		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
+	};
+
+	State<> state(testCase, testCase + sizeof(testCase));
+
+	auto builder = state
+		.PatternBuilder()
+		.setUID("TestUID")
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+		return U64(((*(U32*)(res + 6))) & 0x00FF00FFull); // Just Picking 0xEE and 0xFF
+			})
+		.AddTransformer([](Pattern::Description& desc, U64 res) -> U64 {
+				// expected to be 0xXXEEXXDD comming from previous transform
+				CHECK(res == 0x00EE00DDull);
+				return res | 0xFF00FF00ull; // expected to be 0xFFEEFFDD
+			});
+
+	state.AddPattern(
+		builder
+		.Clone()
+		.setPattern("AA FF BB EE CC ? DD ? EE AA FF")
+		.Build()
+				); // Negative (Should Fail)
+
+	state.AddPattern(
+		builder
+		.Clone()
+		.setPattern("AA ? BB ? CC ? DD ? EE ? FF")
+		.Build()
+				); // Positive Should Find
 
 	CHECK(Scan(state));
 	CHECK(state["TestUID"].ResultsGet().size() == 1);
