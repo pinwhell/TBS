@@ -904,4 +904,26 @@ namespace TBS {
 
 		return bAllFoundAny;
 	}
+
+	template<typename K, U64 SHAREDDESCS_CAPACITY = TBS_CONTAINER_MAX_SIZE, U64 DESCS_CAPACITY = SHAREDDESCS_CAPACITY * 2>
+	static bool ScanOne(K start, K end, const String<>& pattern, Pattern::Result& outResult)
+	{
+		outResult = Pattern::Result{};
+
+		State<SHAREDDESCS_CAPACITY, DESCS_CAPACITY> state(start, end);
+
+		state.AddPattern(
+			state.PatternBuilder()
+			.setPattern(pattern)
+			.stopOnFirstMatch()
+			.Build()
+		);
+
+		if (!Scan(state))
+			return false;
+
+		outResult = state[pattern];
+
+		return true;
+	}
 }
