@@ -640,8 +640,11 @@ namespace TBS {
 
 			Description::SearchSlice currSearchnigRange = (*desc.mCurrentSearchRange);
 
-			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd && !desc.mShared.mFinished; i++)
+			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd; i++)
 			{
+				if (desc.mShared.mFinished)
+					return false;
+
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
 					continue;
 
@@ -680,7 +683,7 @@ namespace TBS {
 			}
 
 			++desc.mCurrentSearchRange;
-			return desc.mCurrentSearchRange != desc.mSearchRangeSlicer.end();
+			return !(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end());
 		}
 
 		using SharedDescription = Description::Shared;
@@ -856,45 +859,44 @@ namespace TBS {
 	template<typename StateT>
 	static bool Scan(StateT& state)
 	{
-		USet<String<>> uidStillSearching;
+		USet<Pattern::Description*> doneSearchingDescs;
+
 #ifdef TBS_MT
-		std::mutex uidStillSearchingMtx;
+		std::mutex doneSearchingDescsMtx;
 #endif
-		// Initially Searching for all UIDs.
 
-		for (Pattern::Description& description : state.mDescriptionts)
-			uidStillSearching.insert(description.mUID);
-
-		while (!uidStillSearching.empty()) {
+		while (doneSearchingDescs.size() < state.mDescriptionts.size())
+		{
 #ifdef TBS_MT
 			Thread::Pool threadPool;
 #endif
-			for (Pattern::Description& description : state.mDescriptionts)
+			for (Pattern::Description& _description : state.mDescriptionts)
 			{
+				Pattern::Description* description = &_description;
+
 				{
 #ifdef TBS_MT
-					std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
+					std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
 #endif
-					if (uidStillSearching.find(description.mUID) == uidStillSearching.end())
+
+					if (doneSearchingDescs.find(description) != doneSearchingDescs.end())
 						continue;
 				}
-
-				// At this point, current UID still searching!
 #ifdef TBS_MT
 				threadPool.enqueue(
-					[&uidStillSearchingMtx, &uidStillSearching](Pattern::Description& description)
+				[&doneSearchingDescs, &doneSearchingDescsMtx](Pattern::Description* description)
+				{
+#endif
+					if (Pattern::Scan(*description) == false)
 					{
-						if (Pattern::Scan(description))
-							return;
+#ifdef TBS_MT
+						std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
+#endif
+						doneSearchingDescs.insert(description);
+					}
 
-						std::lock_guard<std::mutex> lck(uidStillSearchingMtx);
-						uidStillSearching.erase(description.mUID);
-					}, description);
-#else
-				if (Pattern::Scan(description))
-					continue;
-
-				uidStillSearching.erase(description.mUID);
+#ifdef TBS_MT
+				}, description);
 #endif
 			}
 		}
@@ -907,5 +909,27 @@ namespace TBS {
 			bAllFoundAny = bAllFoundAny && sharedDescKv.second->mResult.empty() == false;
 
 		return bAllFoundAny;
+	}
+
+	template<typename K, U64 SHAREDDESCS_CAPACITY = TBS_CONTAINER_MAX_SIZE, U64 DESCS_CAPACITY = SHAREDDESCS_CAPACITY * 2>
+	static bool ScanOne(K start, K end, const String<>& pattern, Pattern::Result& outResult)
+	{
+		outResult = Pattern::Result{};
+
+		State<SHAREDDESCS_CAPACITY, DESCS_CAPACITY> state(start, end);
+
+		state.AddPattern(
+			state.PatternBuilder()
+			.setPattern(pattern)
+			.stopOnFirstMatch()
+			.Build()
+		);
+
+		if (!Scan(state))
+			return false;
+
+		outResult = state[pattern];
+
+		return true;
 	}
 }
