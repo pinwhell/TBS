@@ -11,6 +11,7 @@ option(TBS_TESTS "TBS with Tests" ${MAIN_PROJECT})
 option(TBS_MT "Enable multithreading in TBS" ON)
 option(TBS_USE_SSE2 "Enable SSE2 in TBS" ON)
 option(TBS_USE_AVX "Enable AVX in TBS" ON)
+option(TBS_USE_ARCH_WORD_SIMD "Enable SIMD using Arch Word in TBS" ON)
 option(TBS_USE_ETL "Enable Embedded Template Library in TBS" OFF)
 option(TBS_NO_STL "Disable STL Usage in TBS" OFF)
 
@@ -45,6 +46,11 @@ if(TBS_USE_ETL)
     target_compile_definitions(TBS INTERFACE TBS_USE_ETL)
     target_link_libraries(TBS INTERFACE etl)
 endif()
+
+if(TBS_USE_ARCH_WORD_SIMD)
+    target_compile_definitions(TBS INTERFACE TBS_USE_ARCH_WORD_SIMD)
+endif()
+    
 
 target_include_directories(TBS INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
