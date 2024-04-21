@@ -186,8 +186,12 @@ namespace TBS {
 		return 0; // Should Never Get Here
 	}
 
-	namespace Memory {
+	template<typename ValueT, typename AlignementK>
+	ValueT NumberAlignToFloor(ValueT num, AlignementK alignment) {
+		return num - num % alignment;
+	}
 
+	namespace Memory {
 		static UByte Bits4FromChar(char hex)
 		{
 			if ('0' <= hex && hex <= '9') {
@@ -416,6 +420,7 @@ namespace TBS {
 		struct ParseResult {
 			inline ParseResult()
 				: mParseSuccess(false)
+				, mFirstSolidOff(0)
 			{}
 
 			inline operator bool()
@@ -426,6 +431,19 @@ namespace TBS {
 			Vector<UByte> mPattern;
 			Vector<UByte> mWildcardMask;
 			bool mParseSuccess;
+			U32 mFirstSolidOff;
+			U32 mFirstSolidOffAlign;
+			U32 mFirstSolidOffAlignPatternLen;
+
+			inline const UByte* getPatternFirstSolidAlignEntry()
+			{
+				return mPattern.data() + mFirstSolidOffAlign;
+			}
+
+			inline const UByte* getMaskFirstSolidAlignEntry()
+			{
+				return mWildcardMask.data() + mFirstSolidOffAlign;
+			}
 		};
 
 		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
@@ -443,14 +461,28 @@ namespace TBS {
 			memcpy(result.mPattern.data(), _pattern, patternLen);
 			memset(result.mWildcardMask.data(), 0x00, patternLen);
 
+			bool bFirstSolidFound = false;
+
 			for (size_t i = 0; i < patternLen; i++)
 			{
-				if (mask[i] != '?')
+				if (mask[i] == '?')
+				{
+					result.mPattern[i] = 0x00;
+					result.mWildcardMask[i] = 0xFF;
+
+					continue;
+				}
+
+				if (bFirstSolidFound)
 					continue;
 
-				result.mPattern[i] = 0x00;
-				result.mWildcardMask[i] = 0xFF;
+				result.mFirstSolidOff = i;
+
+				bFirstSolidFound = true;
 			}
+
+			result.mFirstSolidOffAlign = NumberAlignToFloor(result.mFirstSolidOff, sizeof(TBS::UPtr));
+			result.mFirstSolidOffAlignPatternLen = result.mPattern.size() - result.mFirstSolidOffAlign;
 
 			return result.mParseSuccess = true;
 		}
@@ -463,8 +495,9 @@ namespace TBS {
 				return true;
 
 			const char* c = pattern.c_str();
+			bool bFirstSolidFound = false;
 
-			while (*c)
+			for(int i = 0; *c; i++)
 			{
 				String<> str;
 				
@@ -480,24 +513,29 @@ namespace TBS {
 				// At this point, current pattern byte structure good so far
 
 				bool bAnyWildCard = str.find("?") != String<>::npos;
+				bool bFullByteWildcard = str.find("??") != String<>::npos || (bAnyWildCard && str.size() == 1);
 
-				if (!bAnyWildCard)
+				if (!bFirstSolidFound && !bFullByteWildcard)
 				{
-					// Not Wilcarding this byte
-					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
-					result.mWildcardMask.emplace_back(UByte(0x00ull));
-					continue;
+					result.mFirstSolidOff = i;
+					bFirstSolidFound = true;
 				}
 
 				// At this point, current Byte is wildcarded
-
-				bool bFullByteWildcard = str.find("??") != String<>::npos || (bAnyWildCard && str.size() == 1);
 
 				if (bFullByteWildcard)
 				{
 					// At this point we are dealing with Full Byte Wildcard Case
 					result.mPattern.emplace_back(UByte(0x00u));
 					result.mWildcardMask.emplace_back(UByte(0xFFu));
+					continue;
+				}
+
+				if (!bAnyWildCard)
+				{
+					// Not Wilcarding this byte
+					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
+					result.mWildcardMask.emplace_back(UByte(0x00ull));
 					continue;
 				}
 
@@ -517,6 +555,9 @@ namespace TBS {
 				result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
 				result.mWildcardMask.emplace_back(UByte(0x0Fu));
 			}
+
+			result.mFirstSolidOffAlign = NumberAlignToFloor(result.mFirstSolidOff, sizeof(TBS::UPtr));
+			result.mFirstSolidOffAlignPatternLen = result.mPattern.size() - result.mFirstSolidOffAlign;
 
 			return result.mParseSuccess = true;
 		}
@@ -645,7 +686,12 @@ namespace TBS {
 				if (desc.mShared.mFinished)
 					return false;
 
-				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), patternLen, desc.mParsed.mWildcardMask.data()) == false)
+				if (Memory::CompareWithMask(
+					i,
+					desc.mParsed.getPatternFirstSolidAlignEntry(),
+					desc.mParsed.mFirstSolidOffAlignPatternLen,
+					desc.mParsed.getMaskFirstSolidAlignEntry()
+				) == false)
 					continue;
 
 				Result currMatch = (Result)i;

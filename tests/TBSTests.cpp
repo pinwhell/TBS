@@ -14,28 +14,40 @@ TEST_CASE("Pattern Parsing") {
 	CHECK_EQ(res.mWildcardMask.size(), 11);
 	CHECK_EQ(res.mPattern.size(), 11);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00", 11) == 0);
+	CHECK(res.mFirstSolidOff == 0);
 
 	CHECK(Pattern::Parse("48 ? ? ? ? ? ? 48 ? ? ? 48 ? ? 25", res));
 	CHECK_EQ(res.mWildcardMask.size(), 15);
 	CHECK_EQ(res.mPattern.size(), 15);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\x00", 15) == 0);
+	CHECK(res.mFirstSolidOff == 0);
 
 	CHECK(Pattern::Parse("AA ?? BB ? CC ?? DD ? EE ?? FF ??", res));
 	CHECK_EQ(res.mWildcardMask.size(), 12);
 	CHECK_EQ(res.mPattern.size(), 12);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF", 11) == 0);
+	CHECK(res.mFirstSolidOff == 0);
 
+	CHECK(Pattern::Parse("? ? ?? ? ?? ? ?? ? ? ? ? ? ? BB CC ? DD EE ? FF", res)); // First Solid Offset, at 'BB' aka +13
+	CHECK_EQ(res.mPattern.size(), 20);
+	CHECK_EQ(res.mWildcardMask.size(), 20);
+	CHECK(memcmp(res.mWildcardMask.data(), "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\x00\x00\xFF\x00", 20) == 0);
+	CHECK(res.mFirstSolidOff == 13);
+	CHECK(res.mFirstSolidOffAlign == TBS::NumberAlignToFloor(13, sizeof(TBS::UPtr)));
 
 	CHECK_FALSE(Pattern::Parse("AA ??? BB ? CC ?? DD? ? EE ?? FF ??", res));
 	CHECK_EQ(res.mWildcardMask.size(), 1 /*Just 1 valid byte*/);
 	CHECK_EQ(res.mPattern.size(), 1 /*Just 1 valid byte*/);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00", 1) == 0);
+	CHECK(res.mFirstSolidOff == 0);
+
 
 	CHECK_FALSE(Pattern::Parse("AA ? BB ?CC ? DD ?EE ? FF", res));
 	CHECK_EQ(res.mPattern.size(), 3 /*Just 3 valid bytes*/);
 	CHECK_EQ(res.mWildcardMask.size(), 3 /*Just 3 valid bytes*/);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00", 3) == 0);
-
+	CHECK(res.mFirstSolidOff == 0);
+	
 
 	const char testRawPattern[] = "\x10\x00\x30\x40\x00\x60";
 	const char testRawPatternMask[] = "x?xx?x";
@@ -43,6 +55,7 @@ TEST_CASE("Pattern Parsing") {
 	CHECK_EQ(res.mPattern.size(), sizeof(testRawPattern) - 1);
 	CHECK_EQ(res.mWildcardMask.size(), sizeof(testRawPatternMask) - 1);
 	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\x00\xFF\x00", 6) == 0);
+	CHECK(res.mFirstSolidOff == 0);
 }
 
 TEST_CASE("Memory Comparing Masked")
