@@ -795,9 +795,13 @@ namespace TBS {
 			}
 
 			template<typename T>
-			inline DescriptionBuilder& setScanEnd(T end)
+			inline DescriptionBuilder& setScanEnd(T end, bool bOffsetFromStart = false)
 			{
 				mScanEnd = (const UByte*)end;
+
+				if (bOffsetFromStart)
+					mScanEnd += (UPtr)mScanStart;
+
 				return *this;
 			}
 
