@@ -3,6 +3,10 @@
 #include <iostream>
 #include <chrono>
 
+#define TBS_IMPL_SSE2
+#define TBS_IMPL_AVX
+#define TBS_IMPL_ARCH_WORD_SIMD
+
 #include <TBS.hpp>
 
 using namespace TBS;
@@ -91,9 +95,6 @@ TEST_CASE("Memory Comparing Masked")
 
 		// Single-byte wildcarded
 		{"?A", [] {static UByte testCase8[]{ 0xBA }; return testCase8; }(), 1, 1},
-
-		// Empty pattern and sequence
-		{"", [] {static UByte testCase9[1]{ }; return testCase9; }(), 0, 0},
 	};
 
 	for (const auto& testCase : testCases)

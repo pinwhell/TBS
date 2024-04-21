@@ -223,6 +223,9 @@ namespace TBS {
 
 		inline bool CompareWithMaskByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
         { 
+			if (!len)
+				return false;
+
 			if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
 				return false;
 
@@ -240,6 +243,10 @@ namespace TBS {
 
 #ifdef TBS_IMPL_ARCH_WORD_SIMD
 		inline bool CompareWithMaskWord(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
+
+			if (!len)
+				return false;
+
             if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
                 return false;
 
@@ -276,6 +283,9 @@ namespace TBS {
 			}
 
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
+
+				if (!len)
+					return false;
 
 				if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
                     return false;
@@ -316,6 +326,9 @@ namespace TBS {
 
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
 			{
+				if (!len)
+					return false;
+
                 if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
                     return false;
 
