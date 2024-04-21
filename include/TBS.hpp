@@ -52,6 +52,12 @@
 #endif
 #endif
 
+#ifdef TBS_USE_ARCH_WORD_SIMD
+#ifndef TBS_IMPL_ARCH_WORD_SIMD
+#define TBS_IMPL_ARCH_WORD_SIMD
+#endif
+#endif
+
 #ifndef TBS_RESULT_TYPE
 #define TBS_RESULT_TYPE U64
 #endif
@@ -215,7 +221,28 @@ namespace TBS {
 			return (high << 4) | low;
 		}
 
+		inline bool CompareWithMaskByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
+        { 
+			if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
+				return false;
+
+			for (size_t i = 0; i < len; i++)
+            {
+                UByte b1 = chunk1[i] & ~wildCardMask[i];
+                UByte b2 = chunk2[i] & ~wildCardMask[i];
+
+                if (b1 != b2)
+                    return false;
+            }
+
+			return true;
+		}
+
+#ifdef TBS_IMPL_ARCH_WORD_SIMD
 		inline bool CompareWithMaskWord(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
+            if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
+                return false;
+
 			// UPtr ==> Platform Word Length
 			size_t wordLen = len / sizeof(UPtr); // Calculate length in words
 
@@ -229,21 +256,16 @@ namespace TBS {
 			}
 
 			size_t remainingBytes = len % sizeof(UPtr);
-			if (remainingBytes > 0) {
-				// Calculate the starting index of the last incomplete word
-				size_t lastWordIndex = wordLen * sizeof(UPtr);
-				for (size_t i = lastWordIndex; i < len; i++) {
 
-					UByte b1 = chunk1[i] & ~wildCardMask[i];
-					UByte b2 = chunk2[i] & ~wildCardMask[i];
+            if (remainingBytes == 0)
+                return true;
 
-					if (b1 != b2)
-						return false;
-				}
-			}
-
-			return true;
+			// Calculate the starting index of the last incomplete word
+            size_t lastWordIndex = wordLen * sizeof(UPtr);
+            return CompareWithMaskByte(
+            chunk1 + lastWordIndex, chunk2 + lastWordIndex, len - lastWordIndex, wildCardMask + lastWordIndex);
 		}
+#endif
 
 #ifdef TBS_IMPL_SSE2
 		namespace SSE2 {
@@ -254,6 +276,9 @@ namespace TBS {
 			}
 
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask) {
+
+				if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
+                    return false;
 
 				const size_t wordLen = len / sizeof(__m128i); // Calculate length in words
 
@@ -266,6 +291,11 @@ namespace TBS {
 					if (_mm_movemask_epi8(_mm_cmpeq_epi32(maskedChunk1, maskedChunk2)) != 0xFFFF)
 						return false;
 				}
+
+				size_t remainingBytes = len % sizeof(__m128i);
+
+                if (remainingBytes == 0)
+                    return true;
 
 				const size_t lastWordIndex = wordLen * sizeof(__m128i);
 
@@ -286,6 +316,9 @@ namespace TBS {
 
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* wildCardMask)
 			{
+                if ((chunk1[0] & ~wildCardMask[0]) != (chunk2[0] & ~wildCardMask[0]))
+                    return false;
+
 				const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
 
 				for (size_t i = 0; i < wordLen; i++)
@@ -299,9 +332,14 @@ namespace TBS {
 						return false;
 				}
 
+				size_t remainingBytes = len % sizeof(__m256i);
+
+                if (remainingBytes == 0)
+                    return true;
+
 				const size_t lastWordIndex = wordLen * sizeof(__m256i);
 
-				return CompareWithMaskWord(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
+				return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
 					wildCardMask + lastWordIndex);
 			}
 		} // namespace AVX
@@ -314,8 +352,10 @@ namespace TBS {
 			return AVX::CompareWithMask(chunk1, chunk2, len, wildCardMask);
 #elif TBS_USE_SSE2
 			return SSE2::CompareWithMask(chunk1, chunk2, len, wildCardMask);
+#elif defined(TBS_USE_ARCH_WORD_SIMD)
+            return CompareWithMaskWord(chunk1, chunk2, len, wildCardMask);
 #else 
-			return CompareWithMaskWord(chunk1, chunk2, len, wildCardMask);
+            return CompareWithMaskByte(chunk1, chunk2, len, wildCardMask);
 #endif
 		}
 
