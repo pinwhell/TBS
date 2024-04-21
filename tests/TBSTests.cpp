@@ -420,6 +420,42 @@ TEST_CASE("Pattern Scan #4")
 	CHECK(state["TestUID"] == 0xFFEEFFDD);
 }
 
+TEST_CASE("Pattern Scan #5")
+{
+	UByte testCase[] = {
+		0xCC, 0x00, 0x00, 0x00, 0x00
+	};
+
+	State<> state(testCase, testCase + sizeof(testCase));
+
+	state.AddPattern(
+		state
+		.PatternBuilder()
+		.stopOnFirstMatch()
+		.setUID("TestUID1")
+		.setPatternRaw("\xCC")
+		.setMask("x")
+		.Build()
+	);
+
+	state.AddPattern(
+		state
+		.PatternBuilder()
+		.stopOnFirstMatch()
+		.setUID("TestUID2")
+		.setPatternRaw("\xCC\x00\x00\x00")
+		.setMask("x???")
+		.Build()
+	);
+
+	CHECK(Scan(state));
+	CHECK(state["TestUID1"].ResultsGet().size() == 1);
+	CHECK(state["TestUID2"].ResultsGet().size() == 1);
+	auto tstCase0Addr = &testCase[0];
+	CHECK_EQ(tstCase0Addr, (decltype(tstCase0Addr))(TBS::Pattern::Result)state["TestUID1"]);
+	CHECK_EQ(tstCase0Addr, (decltype(tstCase0Addr))(TBS::Pattern::Result)state["TestUID2"]);
+}
+
 
 /*
 	wildCardMask expected to be 0xFF for byte that are wild carded and 0x0 for non-wildcarded bytes
