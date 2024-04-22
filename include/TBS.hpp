@@ -229,6 +229,7 @@ namespace TBS {
 
 		inline bool CompareWithMaskByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
         { 
+			
 			for (size_t i = 0; i < len; i++)
             {
                 UByte b1 = chunk1[i] & compareMask[i];
@@ -441,6 +442,7 @@ namespace TBS {
 		struct ParseResult {
 			inline ParseResult()
 				: mParseSuccess(false)
+                , mFirstSolidOff(-1)
 			{}
 
 			inline operator bool()
@@ -451,6 +453,7 @@ namespace TBS {
 			Vector<UByte> mPattern;
 			Vector<UByte> mCompareMask;
 			bool mParseSuccess;
+            int mFirstSolidOff;
 		};
 
 		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
@@ -479,7 +482,15 @@ namespace TBS {
 
 					continue;
 				}
+
+				if (result.mFirstSolidOff != -1)
+                    continue;
+                
+				result.mFirstSolidOff = i;
 			}
+
+			if (result.mFirstSolidOff == -1)
+                result.mFirstSolidOff = 0;
 
 			return result.mParseSuccess = true;
 		}
@@ -511,6 +522,9 @@ namespace TBS {
 
 				bool bAnyWildCard = str.find("?") != String<>::npos;
 				bool bFullByteWildcard = str.find("??") != String<>::npos || (bAnyWildCard && str.size() == 1);
+
+				if (!bFullByteWildcard && result.mFirstSolidOff == -1)
+                        result.mFirstSolidOff = i;
 
 				// At this point, current Byte is wildcarded
 
@@ -546,6 +560,9 @@ namespace TBS {
 				result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
                 result.mCompareMask.emplace_back(UByte(0xF0u));
 			}
+
+			if (result.mFirstSolidOff == -1)
+                result.mFirstSolidOff = 0;
 
 			return result.mParseSuccess = true;
 		}
@@ -669,10 +686,16 @@ namespace TBS {
 
 			Description::SearchSlice currSearchnigRange = (*desc.mCurrentSearchRange);
 
+			const auto firstWildcard = desc.mParsed.mCompareMask.at(desc.mParsed.mFirstSolidOff);
+            const auto firstPatternByte = desc.mParsed.mPattern.at(desc.mParsed.mFirstSolidOff) & firstWildcard;
+
 			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd; i++)
 			{
 				if (desc.mShared.mFinished)
 					return false;
+
+				if ((*(i + desc.mParsed.mFirstSolidOff) & firstWildcard) != firstPatternByte)
+                    continue;
 
 				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), desc.mParsed.mPattern.size(),
                         desc.mParsed.mCompareMask.data()
@@ -978,12 +1001,13 @@ namespace TBS {
 			if (Pattern::Parse(pattern, mask, parse) == false)
                 return false;
 
-			const auto firstWildcard = parse.mCompareMask.at(0);
-            const auto firstPatternByte = parse.mPattern.at(0) & firstWildcard;
+			
+			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
+            const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
 
 			for (const UByte* i = start; i + parse.mPattern.size() < end; i++)
 			{
-                if ((*i & firstWildcard) != firstPatternByte)
+                if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
                     continue;
 
 				if (!Memory::CompareWithMask(
