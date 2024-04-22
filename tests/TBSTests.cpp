@@ -15,50 +15,49 @@ TEST_CASE("Pattern Parsing") {
 	Pattern::ParseResult res;
 
 	CHECK(Pattern::Parse("AA ? BB ? CC ? DD ? EE ? FF", res));
-	CHECK_EQ(res.mWildcardMask.size(), 11);
+	CHECK_EQ(res.mCompareMask.size(), 11);
 	CHECK_EQ(res.mPattern.size(), 11);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00", 11) == 0);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF", 11) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 
 	CHECK(Pattern::Parse("48 ? ? ? ? ? ? 48 ? ? ? 48 ? ? 25", res));
-	CHECK_EQ(res.mWildcardMask.size(), 15);
+	CHECK_EQ(res.mCompareMask.size(), 15);
 	CHECK_EQ(res.mPattern.size(), 15);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\x00", 15) == 0);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF\x00\x00\x00\x00\x00\x00\xFF\x00\x00\x00\xFF\x00\x00\xFF", 15) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 
 	CHECK(Pattern::Parse("AA ?? BB ? CC ?? DD ? EE ?? FF ??", res));
-	CHECK_EQ(res.mWildcardMask.size(), 12);
+	CHECK_EQ(res.mCompareMask.size(), 12);
 	CHECK_EQ(res.mPattern.size(), 12);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF", 11) == 0);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00", 11) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 
 	CHECK(Pattern::Parse("? ? ?? ? ?? ? ?? ? ? ? ? ? ? BB CC ? DD EE ? FF", res)); // First Solid Offset, at 'BB' aka +13
 	CHECK_EQ(res.mPattern.size(), 20);
-	CHECK_EQ(res.mWildcardMask.size(), 20);
-	CHECK(memcmp(res.mWildcardMask.data(), "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\x00\x00\xFF\x00", 20) == 0);
+	CHECK_EQ(res.mCompareMask.size(), 20);
+	CHECK(memcmp(res.mCompareMask.data(), "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\xFF\xFF\x00\xFF", 20) == 0);
 	CHECK(res.mFirstSolidOff == 13);
-	CHECK(res.mFirstSolidOffAlign == TBS::NumberAlignToFloor(13, sizeof(TBS::UPtr)));
 
 	CHECK_FALSE(Pattern::Parse("AA ??? BB ? CC ?? DD? ? EE ?? FF ??", res));
-	CHECK_EQ(res.mWildcardMask.size(), 1 /*Just 1 valid byte*/);
+	CHECK_EQ(res.mCompareMask.size(), 1 /*Just 1 valid byte*/);
 	CHECK_EQ(res.mPattern.size(), 1 /*Just 1 valid byte*/);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00", 1) == 0);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF", 1) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 
 
 	CHECK_FALSE(Pattern::Parse("AA ? BB ?CC ? DD ?EE ? FF", res));
 	CHECK_EQ(res.mPattern.size(), 3 /*Just 3 valid bytes*/);
-	CHECK_EQ(res.mWildcardMask.size(), 3 /*Just 3 valid bytes*/);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00", 3) == 0);
+	CHECK_EQ(res.mCompareMask.size(), 3 /*Just 3 valid bytes*/);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF\x00\xFF", 3) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 	
 
-	const char testRawPattern[] = "\x10\x00\x30\x40\x00\x60";
+	const char testRawPattern[] = "\x10\xFF\x30\x40\xFF\x60";
 	const char testRawPatternMask[] = "x?xx?x";
 	CHECK(Pattern::Parse(testRawPattern, testRawPatternMask, res));
 	CHECK_EQ(res.mPattern.size(), sizeof(testRawPattern) - 1);
-	CHECK_EQ(res.mWildcardMask.size(), sizeof(testRawPatternMask) - 1);
-	CHECK(memcmp(res.mWildcardMask.data(), "\x00\xFF\x00\x00\xFF\x00", 6) == 0);
+	CHECK_EQ(res.mCompareMask.size(), sizeof(testRawPatternMask) - 1);
+	CHECK(memcmp(res.mCompareMask.data(), "\xFF\x00\xFF\xFF\x00\xFF", 6) == 0);
 	CHECK(res.mFirstSolidOff == 0);
 }
 
@@ -103,8 +102,8 @@ TEST_CASE("Memory Comparing Masked")
 
 		CHECK(Pattern::Parse(testCase.mPattern, res));
 		CHECK_EQ(res.mPattern.size(), testCase.mPatternExpectedLength);
-		CHECK_EQ(res.mWildcardMask.size(), testCase.mMaskExpectedLength);
-		CHECK(Memory::CompareWithMask(testCase.mTestCase, res.mPattern.data(), res.mPattern.size(), res.mWildcardMask.data()));
+		CHECK_EQ(res.mCompareMask.size(), testCase.mMaskExpectedLength);
+		CHECK(Memory::CompareWithMask(testCase.mTestCase, res.mPattern.data(), res.mPattern.size(), res.mCompareMask.data()));
 	}
 }
 
@@ -443,7 +442,7 @@ TEST_CASE("Pattern Scan #5")
 		.PatternBuilder()
 		.stopOnFirstMatch()
 		.setUID("TestUID2")
-		.setPatternRaw("\xCC\x00\x00\x00")
+		.setPatternRaw("\xCC\xFF\xFF\xFF")
 		.setMask("x???")
 		.Build()
 	);
