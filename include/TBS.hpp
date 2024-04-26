@@ -453,7 +453,7 @@ namespace TBS {
 			Vector<UByte> mPattern;
 			Vector<UByte> mCompareMask;
 			bool mParseSuccess;
-            int mFirstSolidOff;
+            size_t mFirstSolidOff;
 		};
 
 		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
@@ -991,30 +991,48 @@ namespace TBS {
 		template<typename T>
         inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
 		{
-            results.clear();
-
-            const UByte* start = (decltype(start)) _start;
-            const UByte* end = (decltype(end)) _end;
-
-            Pattern::ParseResult parse;
+			Pattern::ParseResult parse;
             
 			if (Pattern::Parse(pattern, mask, parse) == false)
                 return false;
 
 			
+			return Scan<T>(_start, _end, results, parse);
+		}
+
+		template<typename T>
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const char* pattern)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, parse) == false)
+				return false;
+
+
+			return Scan<T>(_start, _end, results, parse);
+		}
+
+		template<typename T>
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const Pattern::ParseResult& parse)
+		{
+			results.clear();
+
+			const UByte* start = (decltype(start))_start;
+			const UByte* end = (decltype(end))_end;
+
 			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
-            const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
+			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
 
 			for (const UByte* i = start; i + parse.mPattern.size() < end; i++)
 			{
-                if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
-                    continue;
+				if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
+					continue;
 
 				if (!Memory::CompareWithMask(
-                        i, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
-                    continue;
+					i, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+					continue;
 
-				results.push_back(i);
+				results.push_back((TBS_RESULT_TYPE)i);
 			}
 
 			return results.empty() == false;
