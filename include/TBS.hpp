@@ -76,6 +76,12 @@
 #include <immintrin.h>
 #endif
 
+#if defined(_MSC_VER)
+#include <intrin.h> // For __cpuid
+#elif defined(__GNUC__) || defined(__clang__)
+#include <cpuid.h> // For __get_cpuid
+#endif
+
 namespace TBS {
 	using U64 = unsigned long long;
 	using U32 = unsigned int;
@@ -270,6 +276,22 @@ namespace TBS {
 
 #ifdef TBS_IMPL_SSE2
 		namespace SSE2 {
+			inline bool Supported()
+			{
+#if defined(_MSC_VER)
+				int CPUInfo[4];
+				__cpuid(CPUInfo, 1);
+				return (CPUInfo[3] & (1 << 26)) != 0; // Check bit 26 of EDX
+#elif defined(__GNUC__) || defined(__clang__)
+				unsigned int eax, ebx, ecx, edx;
+				__get_cpuid(1, &eax, &ebx, &ecx, &edx);
+				return (edx & (1 << 26)) != 0; // Check bit 26 of EDX
+#else
+				// Unsupported compiler/platform
+				return false;
+#endif
+			}
+
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
 				const size_t wordLen = len / sizeof(__m128i); // Calculate length in words
 
@@ -299,6 +321,22 @@ namespace TBS {
 #ifdef TBS_IMPL_AVX
 		namespace AVX
 		{
+			inline bool Supported()
+			{
+#if defined(_MSC_VER)
+				int CPUInfo[4];
+				__cpuid(CPUInfo, 1);
+				return (CPUInfo[2] & (1 << 28)) != 0; // Check bit 28 of ECX
+#elif defined(__GNUC__) || defined(__clang__)
+				unsigned int eax, ebx, ecx, edx;
+				__get_cpuid(1, &eax, &ebx, &ecx, &edx);
+				return (ecx & (1 << 28)) != 0; // Check bit 28 of ECX
+#else
+				// Unsupported compiler/platform
+				return false;
+#endif
+			}
+
 			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
 			{
 				const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
@@ -327,18 +365,27 @@ namespace TBS {
 		} // namespace AVX
 #endif
 
-
 		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
 		{
+			static auto RTCompareWithMask = [] {
 #ifdef TBS_USE_AVX
-            return AVX::CompareWithMask(chunk1, chunk2, len, compareMask);
-#elif TBS_USE_SSE2
-            return SSE2::CompareWithMask(chunk1, chunk2, len, compareMask);
-#elif defined(TBS_USE_ARCH_WORD_SIMD)
-            return CompareWithMaskWord(chunk1, chunk2, len, compareMask);
-#else 
-            return CompareWithMaskByte(chunk1, chunk2, len, compareMask);
+				if (AVX::Supported())
+					return AVX::CompareWithMask;
 #endif
+
+#ifdef TBS_USE_SSE2
+				if (SSE2::Supported())
+					return SSE2::CompareWithMask;
+#endif
+
+#ifdef TBS_USE_ARCH_WORD_SIMD
+				return CompareWithMaskWord;
+#else
+				return CompareWithMaskByte;
+#endif
+				}();
+			
+			return RTCompareWithMask(chunk1, chunk2, len, compareMask);
 		}
 
 		template<typename T = UPtr>
