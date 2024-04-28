@@ -76,6 +76,13 @@
 #include <immintrin.h>
 #endif
 
+#ifdef _MSC_VER // If using Microsoft Visual Studio compiler
+#pragma intrinsic(_BitScanForward)
+#define CTZ(x) [x]{unsigned long index = 0; _BitScanForward((unsigned long *)&index, x); return index; }()
+#else // For GCC and compatible compilers
+#define CTZ(x) __builtin_ctz(x)
+#endif
+
 namespace TBS {
 	using U64 = unsigned long long;
 	using U32 = unsigned int;
@@ -227,9 +234,20 @@ namespace TBS {
 			return (high << 4) | low;
 		}
 
-		inline bool CompareWithMaskByte(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
+		const UByte* SearchFirstOne2One(const UByte* start, const UByte* end, UByte byte)
+		{
+			for (const UByte* i = start; i != end; ++i) {
+				if (*i != byte)
+					continue;
+
+				return i;
+			}
+
+			return nullptr; // Byte not found
+		}
+
+		inline bool CompareWithMaskOne2One(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
         { 
-			
 			for (size_t i = 0; i < len; i++)
             {
                 UByte b1 = chunk1[i] & compareMask[i];
@@ -242,102 +260,190 @@ namespace TBS {
 			return true;
 		}
 
+		namespace SIMD {
+
+			namespace Platform {
 #ifdef TBS_IMPL_ARCH_WORD_SIMD
-		inline bool CompareWithMaskWord(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
-			// UPtr ==> Platform Word Length
-			size_t wordLen = len / sizeof(UPtr); // Calculate length in words
+				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
+					// UPtr ==> Platform Word Length
+					size_t wordLen = len / sizeof(UPtr); // Calculate length in words
 
-			for (size_t i = 0; i < wordLen; i++) {
-				// Convert byte index to word index
-                const UPtr wordMask = *((const UPtr*)compareMask + i);
-                const UPtr maskedChunk1 = *((const UPtr*) chunk1 + i) & wordMask;
-                const UPtr maskedChunk2 = *((const UPtr*) chunk2 + i) & wordMask;
-				if (maskedChunk1 != maskedChunk2)
-					return false;
-			}
+					for (size_t i = 0; i < wordLen; i++) {
+						// Convert byte index to word index
+						const UPtr wordMask = *((const UPtr*)compareMask + i);
+						const UPtr maskedChunk1 = *((const UPtr*)chunk1 + i) & wordMask;
+						const UPtr maskedChunk2 = *((const UPtr*)chunk2 + i) & wordMask;
+						if (maskedChunk1 != maskedChunk2)
+							return false;
+					}
 
-			size_t remainingBytes = len % sizeof(UPtr);
+					size_t remainingBytes = len % sizeof(UPtr);
 
-            if (remainingBytes == 0)
-                return true;
+					if (remainingBytes == 0)
+						return true;
 
-			// Calculate the starting index of the last incomplete word
-            size_t lastWordIndex = wordLen * sizeof(UPtr);
-            return CompareWithMaskByte(
-                chunk1 + lastWordIndex, chunk2 + lastWordIndex, len - lastWordIndex, compareMask + lastWordIndex);
-		}
+					// Calculate the starting index of the last incomplete word
+					size_t lastWordIndex = wordLen * sizeof(UPtr);
+					return Memory::CompareWithMaskOne2One(
+						chunk1 + lastWordIndex, chunk2 + lastWordIndex, len - lastWordIndex, compareMask + lastWordIndex);
+				}
 #endif
+			}
 
 #ifdef TBS_IMPL_SSE2
-		namespace SSE2 {
-			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
-				const size_t wordLen = len / sizeof(__m128i); // Calculate length in words
+			namespace SSE2 {
 
-				for (size_t i = 0; i < wordLen; i++) {
-					// Convert byte index to word index
-                    const __m128i wordMask = _mm_load_si128((const __m128i*) compareMask + i);
-					const __m128i maskedChunk1 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk1 + i), wordMask);
-					const __m128i maskedChunk2 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk2 + i), wordMask);
+				inline int FirstMatchingByteIndex(__m128i a, __m128i b) {
+					__m128i cmp_result = _mm_cmpeq_epi8(a, b);
 
-					if (_mm_movemask_epi8(_mm_cmpeq_epi32(maskedChunk1, maskedChunk2)) != 0xFFFF)
-						return false;
+					// Convert comparison result to mask
+					int mask = _mm_movemask_epi8(cmp_result);
+
+					if (mask == 0)
+						return -1;
+
+					return CTZ(mask);
 				}
 
-				size_t remainingBytes = len % sizeof(__m128i);
+				inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
+				{
+					const size_t searchLen = (size_t)(end - start);
+					const size_t wordLen = searchLen / sizeof(__m128i); // Calculate length in words
 
-                if (remainingBytes == 0)
-                    return true;
+					__m128i searching = _mm_set1_epi8(byte);
 
-				const size_t lastWordIndex = wordLen * sizeof(__m128i);
+					for (size_t i = 0; i < wordLen; i++) {
+						const __m128i currScanning = _mm_load_si128((const __m128i*) start + i);
 
-				return CompareWithMaskWord(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m128i), compareMask + lastWordIndex);
+						int foundIndex = FirstMatchingByteIndex(currScanning, searching);
+
+						if (foundIndex < 0)
+							continue;
+
+						return (UByte*)((const __m128i*)start + i) + foundIndex;
+					}
+
+					if (searchLen % sizeof(__m128i) == 0)
+						return nullptr;
+
+					return SearchFirstOne2One(start + wordLen * sizeof(__m128i), end, byte); // Nothing Matched
+				}
+
+				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
+					const size_t wordLen = len / sizeof(__m128i); // Calculate length in words
+
+					for (size_t i = 0; i < wordLen; i++) {
+						// Convert byte index to word index
+						const __m128i wordMask = _mm_load_si128((const __m128i*) compareMask + i);
+						const __m128i maskedChunk1 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk1 + i), wordMask);
+						const __m128i maskedChunk2 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk2 + i), wordMask);
+
+						if (_mm_movemask_epi8(_mm_cmpeq_epi32(maskedChunk1, maskedChunk2)) != 0xFFFF)
+							return false;
+					}
+
+					size_t remainingBytes = len % sizeof(__m128i);
+
+					if (remainingBytes == 0)
+						return true;
+
+					const size_t lastWordIndex = wordLen * sizeof(__m128i);
+
+					return Platform::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m128i), compareMask + lastWordIndex);
+				}
 			}
-		}
 #endif
 
 
 #ifdef TBS_IMPL_AVX
-		namespace AVX
-		{
-			inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
+			namespace AVX
 			{
-				const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
+				inline int FirstMatchingByteIndex(__m256i a, __m256i b) {
+					__m256i cmp_result = _mm256_cmpeq_epi8(a, b);
 
-				for (size_t i = 0; i < wordLen; i++)
-				{
-					// Convert byte index to word index
-                    const __m256i wordMask = _mm256_load_si256((const __m256i*) compareMask + i);
-					const __m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
-					const __m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
+					// Convert comparison result to mask
+					int mask = _mm256_movemask_epi8(cmp_result);
 
-					if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
-						return false;
+					if (mask == 0)
+						return -1;
+
+					return CTZ(mask);
 				}
 
-				size_t remainingBytes = len % sizeof(__m256i);
+				inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
+				{
+					const size_t searchLen = (size_t)(end - start);
+					const size_t wordLen = searchLen / sizeof(__m256i); // Calculate length in words
 
-                if (remainingBytes == 0)
-                    return true;
+					__m256i searching = _mm256_set1_epi8(byte);
 
-				const size_t lastWordIndex = wordLen * sizeof(__m256i);
+					for (size_t i = 0; i < wordLen; i++) {
+						const __m256i currScanning = _mm256_load_si256((const __m256i*) start + i);
 
-				return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
-					compareMask + lastWordIndex);
-			}
-		} // namespace AVX
+						int foundIndex = FirstMatchingByteIndex(currScanning, searching);
+
+						if (foundIndex < 0)
+							continue;
+
+						return (UByte*)((const __m256i*)start + i) + foundIndex;
+					}
+
+					if (searchLen % sizeof(__m256i) == 0)
+						return nullptr;
+
+					return SSE2::SearchFirst(start + wordLen * sizeof(__m256i), end, byte); // Nothing Matched
+				}
+
+				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
+				{
+					const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
+
+					for (size_t i = 0; i < wordLen; i++)
+					{
+						// Convert byte index to word index
+						const __m256i wordMask = _mm256_load_si256((const __m256i*) compareMask + i);
+						const __m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
+						const __m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
+
+						if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
+							return false;
+					}
+
+					size_t remainingBytes = len % sizeof(__m256i);
+
+					if (remainingBytes == 0)
+						return true;
+
+					const size_t lastWordIndex = wordLen * sizeof(__m256i);
+
+					return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
+						compareMask + lastWordIndex);
+				}
+			} // namespace AVX
 #endif
-
+		}
 
 		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
 		{
 #ifdef TBS_USE_AVX
-            return AVX::CompareWithMask(chunk1, chunk2, len, compareMask);
+            return SIMD::AVX::CompareWithMask(chunk1, chunk2, len, compareMask);
 #elif TBS_USE_SSE2
-            return SSE2::CompareWithMask(chunk1, chunk2, len, compareMask);
+            return SIMD::SSE2::CompareWithMask(chunk1, chunk2, len, compareMask);
 #elif defined(TBS_USE_ARCH_WORD_SIMD)
-            return CompareWithMaskWord(chunk1, chunk2, len, compareMask);
+            return SIMD::Platform::CompareWithMask(chunk1, chunk2, len, compareMask);
 #else 
-            return CompareWithMaskByte(chunk1, chunk2, len, compareMask);
+            return CompareWithMaskOne2One(chunk1, chunk2, len, compareMask);
+#endif
+		}
+
+		inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
+		{
+#ifdef TBS_USE_AVX
+			return SIMD::AVX::SearchFirst(start, end, byte);
+#elif defined(TBS_USE_SSE2)
+			return SIMD::SSE2::SearchFirst(start, end, byte);
+#else 
+			return SearchFirstOne2One(start, end, byte);
 #endif
 		}
 

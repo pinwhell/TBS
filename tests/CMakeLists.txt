@@ -1,9 +1,17 @@
 enable_testing()
 
-add_executable(TBSTest "TBSTests.cpp" "TestInclution.cpp")
+file(GLOB ALL_TST_SRC *.cpp)
 
-if(TBS_USE_ETL AND MSVC)
-    target_link_options(TBSTest PRIVATE /STACK:32000000)
-endif()
+foreach(TST_SRC ${ALL_TST_SRC})
+    get_filename_component(TST_SRC_NAME ${TST_SRC} NAME_WE)
 
-target_link_libraries(TBSTest TBS doctest_with_main)
+    add_executable(${TST_SRC_NAME} ${TST_SRC})
+
+    if(TBS_USE_ETL AND MSVC)
+        target_link_options(${TST_SRC_NAME} PRIVATE /STACK:32000000)
+    endif()    
+    
+    target_link_libraries(${TST_SRC_NAME} TBS doctest_with_main)
+endforeach()
+
+
