@@ -478,6 +478,9 @@ namespace TBS {
 
 		inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
 		{
+			if (start >= end)
+				return nullptr;
+
 			static auto RTSearchFirst = [] {
 #ifdef TBS_USE_AVX
 				if (SIMD::AVX::Supported())
@@ -840,21 +843,24 @@ namespace TBS {
 
 			const auto firstWildcard = desc.mParsed.mCompareMask.at(desc.mParsed.mFirstSolidOff);
             const auto firstPatternByte = desc.mParsed.mPattern.at(desc.mParsed.mFirstSolidOff) & firstWildcard;
+			const auto patternSize = desc.mParsed.mPattern.size();
 
-			for (const UByte*& i = desc.mLastSearchPos; i + patternLen - 1 < currSearchnigRange.mEnd; i++)
+			for (
+				const UByte* found = Memory::SearchFirst(desc.mLastSearchPos, currSearchnigRange.mEnd, firstPatternByte);
+				found && (found + patternSize - 1) < currSearchnigRange.mEnd;
+				found = Memory::SearchFirst(found + 1, currSearchnigRange.mEnd, firstPatternByte))
 			{
 				if (desc.mShared.mFinished)
 					return false;
 
-				if ((*(i + desc.mParsed.mFirstSolidOff) & firstWildcard) != firstPatternByte)
-                    continue;
+				auto scanEntry = found - desc.mParsed.mFirstSolidOff;
 
-				if (Memory::CompareWithMask(i, desc.mParsed.mPattern.data(), desc.mParsed.mPattern.size(),
-                        desc.mParsed.mCompareMask.data()
+				if (Memory::CompareWithMask(scanEntry, desc.mParsed.mPattern.data(), desc.mParsed.mPattern.size(),
+					desc.mParsed.mCompareMask.data()
 				) == false)
 					continue;
 
-				Result currMatch = (Result)i;
+				Result currMatch = (Result)scanEntry;
 
 				// At this point, we found a match
 
@@ -888,6 +894,7 @@ namespace TBS {
 				}
 			}
 
+			desc.mLastSearchPos = currSearchnigRange.mEnd - patternSize;
 			++desc.mCurrentSearchRange;
 			return !(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end());
 		}

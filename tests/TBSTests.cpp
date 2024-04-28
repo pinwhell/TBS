@@ -201,17 +201,17 @@ TEST_CASE("Pattern Sliced Scan Test")
 	CHECK(Pattern::Scan(pattern1));
 	CHECK(Pattern::Scan(pattern2));
 
-	// Expected first slice scan exausted and .mLastSearchPosition to be = buff + PATTERN_SEARCH_SLICE_SIZE - patternXSize + 1 aka at the end of first slice
-	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern1Size + 1);
-	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern2Size + 1);
+	// Expected first slice scan exausted and .mLastSearchPosition to be = buff + PATTERN_SEARCH_SLICE_SIZE - patternXSize aka at the end of first slice
+	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern1Size);
+	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 1) - pattern2Size);
 
 	// Same Again..., now we expect a false, since we will consume second and last scanning slice
 	CHECK_FALSE(Pattern::Scan(pattern1));
 	CHECK_FALSE(Pattern::Scan(pattern2));
 
 	// Now at the end of second slice
-	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern1Size + 1);
-	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern2Size + 1);
+	CHECK_EQ(pattern1.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern1Size);
+	CHECK_EQ(pattern2.mLastSearchPos, PatternScanSliceBase(buff, 2) - pattern2Size);
 
 	// Sanity Checks, expecting TBS::Scan to return false (patterns already at end and didnt found anything)
 	CHECK_FALSE(Scan(state));
