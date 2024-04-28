@@ -461,9 +461,11 @@ namespace TBS {
 		{
 			static auto RTCompareWithMask = [] {
 #ifdef TBS_USE_AVX
-				return SIMD::AVX::CompareWithMask;
+				if(SIMD::AVX::Supported())
+					return SIMD::AVX::CompareWithMask;
 #elif TBS_USE_SSE2
-				return SIMD::SSE2::CompareWithMask;
+				if (SIMD::AVX::Supported())
+					return SIMD::AVX::CompareWithMask;
 #elif defined(TBS_USE_ARCH_WORD_SIMD)
 				return SIMD::Platform::CompareWithMask;
 #else 
@@ -478,12 +480,12 @@ namespace TBS {
 		{
 			static auto RTSearchFirst = [] {
 #ifdef TBS_USE_AVX
-				return SIMD::AVX::SearchFirst;
+				if (SIMD::AVX::Supported())
+					return SIMD::AVX::SearchFirst;
 #elif TBS_USE_SSE2
-				return SIMD::SSE2::SearchFirst;
-#elif defined(TBS_USE_ARCH_WORD_SIMD)
-				return SIMD::Platform::SearchFirst;
-#else 
+				if (SIMD::SSE2::Supported())
+					return SIMD::SSE2::SearchFirst;
+#else
 				return SearchFirstOne2One;
 #endif
 				}();
