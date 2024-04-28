@@ -76,10 +76,13 @@
 #include <immintrin.h>
 #endif
 
-#ifdef _MSC_VER // If using Microsoft Visual Studio compiler
+
+#if defined(_MSC_VER)
 #pragma intrinsic(_BitScanForward)
 #define CTZ(x) [x]{unsigned long index = 0; _BitScanForward((unsigned long *)&index, x); return index; }()
-#else // For GCC and compatible compilers
+#include <intrin.h> // For __cpuid
+#elif defined(__GNUC__) || defined(__clang__)
+#include <cpuid.h> // For __get_cpuid
 #define CTZ(x) __builtin_ctz(x)
 #endif
 
@@ -292,7 +295,22 @@ namespace TBS {
 
 #ifdef TBS_IMPL_SSE2
 			namespace SSE2 {
-
+				inline bool Supported()
+				{
+	#if defined(_MSC_VER)
+					int CPUInfo[4];
+					__cpuid(CPUInfo, 1);
+					return (CPUInfo[3] & (1 << 26)) != 0; // Check bit 26 of EDX
+	#elif defined(__GNUC__) || defined(__clang__)
+					unsigned int eax, ebx, ecx, edx;
+					__get_cpuid(1, &eax, &ebx, &ecx, &edx);
+					return (edx & (1 << 26)) != 0; // Check bit 26 of EDX
+	#else
+					// Unsupported compiler/platform
+					return false;
+	#endif
+				}
+				
 				inline int FirstMatchingByteIndex(__m128i a, __m128i b) {
 					__m128i cmp_result = _mm_cmpeq_epi8(a, b);
 
@@ -358,6 +376,22 @@ namespace TBS {
 #ifdef TBS_IMPL_AVX
 			namespace AVX
 			{
+				inline bool Supported()
+				{
+#if defined(_MSC_VER)
+					int CPUInfo[4];
+					__cpuid(CPUInfo, 1);
+					return (CPUInfo[2] & (1 << 28)) != 0; // Check bit 28 of ECX
+#elif defined(__GNUC__) || defined(__clang__)
+					unsigned int eax, ebx, ecx, edx;
+					__get_cpuid(1, &eax, &ebx, &ecx, &edx);
+					return (ecx & (1 << 28)) != 0; // Check bit 28 of ECX
+#else
+					// Unsupported compiler/platform
+					return false;
+#endif
+				}
+
 				inline int FirstMatchingByteIndex(__m256i a, __m256i b) {
 					__m256i cmp_result = _mm256_cmpeq_epi8(a, b);
 
@@ -425,26 +459,36 @@ namespace TBS {
 
 		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
 		{
+			static auto RTCompareWithMask = [] {
 #ifdef TBS_USE_AVX
-            return SIMD::AVX::CompareWithMask(chunk1, chunk2, len, compareMask);
+				return SIMD::AVX::CompareWithMask;
 #elif TBS_USE_SSE2
-            return SIMD::SSE2::CompareWithMask(chunk1, chunk2, len, compareMask);
+				return SIMD::SSE2::CompareWithMask;
 #elif defined(TBS_USE_ARCH_WORD_SIMD)
-            return SIMD::Platform::CompareWithMask(chunk1, chunk2, len, compareMask);
+				return SIMD::Platform::CompareWithMask;
 #else 
-            return CompareWithMaskOne2One(chunk1, chunk2, len, compareMask);
+				return CompareWithMaskOne2One;
 #endif
+				}();
+
+			return RTCompareWithMask(chunk1, chunk2, len, compareMask);
 		}
 
 		inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
 		{
+			static auto RTSearchFirst = [] {
 #ifdef TBS_USE_AVX
-			return SIMD::AVX::SearchFirst(start, end, byte);
-#elif defined(TBS_USE_SSE2)
-			return SIMD::SSE2::SearchFirst(start, end, byte);
+				return SIMD::AVX::SearchFirst;
+#elif TBS_USE_SSE2
+				return SIMD::SSE2::SearchFirst;
+#elif defined(TBS_USE_ARCH_WORD_SIMD)
+				return SIMD::Platform::SearchFirst;
 #else 
-			return SearchFirstOne2One(start, end, byte);
+				return SearchFirstOne2One;
 #endif
+				}();
+
+			return RTSearchFirst(start, end, byte);
 		}
 
 		template<typename T = UPtr>
@@ -559,7 +603,7 @@ namespace TBS {
 			Vector<UByte> mPattern;
 			Vector<UByte> mCompareMask;
 			bool mParseSuccess;
-            int mFirstSolidOff;
+            size_t mFirstSolidOff;
 		};
 
 		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
@@ -1097,30 +1141,48 @@ namespace TBS {
 		template<typename T>
         inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
 		{
-            results.clear();
-
-            const UByte* start = (decltype(start)) _start;
-            const UByte* end = (decltype(end)) _end;
-
-            Pattern::ParseResult parse;
+			Pattern::ParseResult parse;
             
 			if (Pattern::Parse(pattern, mask, parse) == false)
                 return false;
 
 			
+			return Scan<T>(_start, _end, results, parse);
+		}
+
+		template<typename T>
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const char* pattern)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, parse) == false)
+				return false;
+
+
+			return Scan<T>(_start, _end, results, parse);
+		}
+
+		template<typename T>
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const Pattern::ParseResult& parse)
+		{
+			results.clear();
+
+			const UByte* start = (decltype(start))_start;
+			const UByte* end = (decltype(end))_end;
+
 			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
-            const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
+			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
 
 			for (const UByte* i = start; i + parse.mPattern.size() < end; i++)
 			{
-                if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
-                    continue;
+				if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
+					continue;
 
 				if (!Memory::CompareWithMask(
-                        i, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
-                    continue;
+					i, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+					continue;
 
-				results.push_back(i);
+				results.push_back((TBS_RESULT_TYPE)i);
 			}
 
 			return results.empty() == false;
