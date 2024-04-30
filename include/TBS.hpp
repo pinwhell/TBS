@@ -1148,14 +1148,14 @@ namespace TBS {
 
 	namespace Light {
 		template<typename T>
-        inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
 		{
 			Pattern::ParseResult parse;
-            
-			if (Pattern::Parse(pattern, mask, parse) == false)
-                return false;
 
-			
+			if (Pattern::Parse(pattern, mask, parse) == false)
+				return false;
+
+
 			return Scan<T>(_start, _end, results, parse);
 		}
 
@@ -1191,10 +1191,59 @@ namespace TBS {
 					found - parse.mFirstSolidOff, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
 					continue;
 
-				results.push_back((TBS_RESULT_TYPE) (found - parse.mFirstSolidOff));
+				results.push_back((TBS_RESULT_TYPE)(found - parse.mFirstSolidOff));
 			}
 
 			return results.empty() == false;
+		}
+
+		template<typename T>
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const void* pattern, const char* mask)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, mask, parse) == false)
+				return false;
+
+
+			return ScanOne<T>(_start, _end, result, parse);
+		}
+
+		template<typename T>
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const char* pattern)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, parse) == false)
+				return false;
+
+
+			return ScanOne<T>(_start, _end, result, parse);
+		}
+
+		template<typename T>
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const Pattern::ParseResult& parse)
+		{
+			const UByte* start = (decltype(start))_start;
+			const UByte* end = (decltype(end))_end;
+
+			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
+			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
+
+			for (
+				const UByte* found = Memory::SearchFirst(start, end, firstPatternByte);
+				found && (found + parse.mPattern.size() - 1) < end;
+				found = Memory::SearchFirst(found + 1, end, firstPatternByte))
+			{
+				if (!Memory::CompareWithMask(
+					found - parse.mFirstSolidOff, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+					continue;
+
+				result = (TBS_RESULT_TYPE)(found - parse.mFirstSolidOff);
+				return true;
+			}
+
+			return false;
 		}
 	}
 }
