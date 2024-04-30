@@ -463,10 +463,14 @@ namespace TBS {
 #ifdef TBS_USE_AVX
 				if(SIMD::AVX::Supported())
 					return SIMD::AVX::CompareWithMask;
-#elif TBS_USE_SSE2
+#endif
+
+#ifdef TBS_USE_SSE2
 				if (SIMD::AVX::Supported())
 					return SIMD::AVX::CompareWithMask;
-#elif defined(TBS_USE_ARCH_WORD_SIMD)
+#endif
+
+#ifdef TBS_USE_ARCH_WORD_SIMD
 				return SIMD::Platform::CompareWithMask;
 #else 
 				return CompareWithMaskOne2One;
@@ -485,12 +489,13 @@ namespace TBS {
 #ifdef TBS_USE_AVX
 				if (SIMD::AVX::Supported())
 					return SIMD::AVX::SearchFirst;
-#elif TBS_USE_SSE2
+#endif
+
+#ifdef TBS_USE_SSE2
 				if (SIMD::SSE2::Supported())
 					return SIMD::SSE2::SearchFirst;
-#else
-				return SearchFirstOne2One;
 #endif
+				return SearchFirstOne2One;
 				}();
 
 			return RTSearchFirst(start, end, byte);
@@ -597,7 +602,7 @@ namespace TBS {
 		struct ParseResult {
 			inline ParseResult()
 				: mParseSuccess(false)
-                , mFirstSolidOff(-1)
+				, mTrimmDisp(0)
 			{}
 
 			inline operator bool()
@@ -607,8 +612,19 @@ namespace TBS {
 
 			Vector<UByte> mPattern;
 			Vector<UByte> mCompareMask;
+			Vector<UByte> mTrimmedPattern;
+			Vector<UByte> mTrimmedCompareMask;
+			size_t mTrimmDisp;
 			bool mParseSuccess;
-            size_t mFirstSolidOff;
+
+			inline void TrimRefresh()
+			{
+				mTrimmedPattern.clear();
+				mTrimmedPattern.insert(mTrimmedPattern.end(), mPattern.begin() + mTrimmDisp, mPattern.end());
+
+				mTrimmedCompareMask.clear();
+				mTrimmedCompareMask.insert(mTrimmedCompareMask.end(), mCompareMask.begin() + mTrimmDisp, mCompareMask.end());
+			}
 		};
 
 		static bool Parse(const void* _pattern, const char* mask, ParseResult& result)
@@ -638,14 +654,14 @@ namespace TBS {
 					continue;
 				}
 
-				if (result.mFirstSolidOff != -1)
-                    continue;
-                
-				result.mFirstSolidOff = i;
+				if (!bFirstSolidFound)
+				{
+					result.mTrimmDisp = i;
+					bFirstSolidFound = true;
+				}
 			}
 
-			if (result.mFirstSolidOff == -1)
-                result.mFirstSolidOff = 0;
+			result.TrimRefresh();
 
 			return result.mParseSuccess = true;
 		}
@@ -678,8 +694,11 @@ namespace TBS {
 				bool bAnyWildCard = str.find("?") != String<>::npos;
 				bool bFullByteWildcard = str.find("??") != String<>::npos || (bAnyWildCard && str.size() == 1);
 
-				if (!bFullByteWildcard && result.mFirstSolidOff == -1)
-                        result.mFirstSolidOff = i;
+				if (!bFirstSolidFound && !bFullByteWildcard)
+				{
+					result.mTrimmDisp = i;
+					bFirstSolidFound = true;
+				}
 
 				// At this point, current Byte is wildcarded
 
@@ -716,8 +735,7 @@ namespace TBS {
                 result.mCompareMask.emplace_back(UByte(0xF0u));
 			}
 
-			if (result.mFirstSolidOff == -1)
-                result.mFirstSolidOff = 0;
+			result.TrimRefresh();
 
 			return result.mParseSuccess = true;
 		}
@@ -833,34 +851,44 @@ namespace TBS {
 
 		static bool Scan(Description& desc)
 		{
-			if (desc.mShared.mFinished ||
+			auto& shared = desc.mShared;
+			auto& parsed = desc.mParsed;
+
+			if (shared.mFinished ||
 				(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end()))
 				return false;
 
-			const size_t patternLen = desc.mParsed.mPattern.size();
+			const size_t patternLen = parsed.mPattern.size();
 
 			Description::SearchSlice currSearchnigRange = (*desc.mCurrentSearchRange);
 
-			const auto firstWildcard = desc.mParsed.mCompareMask.at(desc.mParsed.mFirstSolidOff);
-            const auto firstPatternByte = desc.mParsed.mPattern.at(desc.mParsed.mFirstSolidOff) & firstWildcard;
-			const auto patternSize = desc.mParsed.mPattern.size();
+            const auto solid = parsed.mTrimmedPattern[0];
+			const auto solidMask = parsed.mTrimmedCompareMask[0];
+			const auto patternSize = parsed.mTrimmedPattern.size() - 1;
 
-			for (
-				const UByte* found = Memory::SearchFirst(desc.mLastSearchPos, currSearchnigRange.mEnd, firstPatternByte);
-				found && (found + patternSize - 1) < currSearchnigRange.mEnd;
-				found = Memory::SearchFirst(found + 1, currSearchnigRange.mEnd, firstPatternByte))
+			const UByte* found = desc.mLastSearchPos - 1; // Minus one to bootstrap it with the next()
+
+			auto next = [&found, &currSearchnigRange, &solid, &solidMask] {
+				if (!solidMask) // If solid is not solid, lets simply return [found + 1]
+				{
+					found++;
+					return;
+				}
+
+				found = Memory::SearchFirst(found + 1, currSearchnigRange.mEnd, solid);
+				};
+
+			for (next(); found && found + patternSize < currSearchnigRange.mEnd; next())
 			{
-				if (desc.mShared.mFinished)
+				if (shared.mFinished)
 					return false;
 
-				auto scanEntry = found - desc.mParsed.mFirstSolidOff;
-
-				if (Memory::CompareWithMask(scanEntry, desc.mParsed.mPattern.data(), desc.mParsed.mPattern.size(),
-					desc.mParsed.mCompareMask.data()
+				if (Memory::CompareWithMask(found, parsed.mTrimmedPattern.data(), parsed.mTrimmedPattern.size(),
+					parsed.mTrimmedCompareMask.data()
 				) == false)
 					continue;
 
-				Result currMatch = (Result)scanEntry;
+				Result currMatch = (Result)(found - parsed.mTrimmDisp);
 
 				// At this point, we found a match
 
@@ -871,30 +899,30 @@ namespace TBS {
 				// lets report it
 				{
 #ifdef TBS_MT
-					std::lock_guard<std::mutex> resultReportLck(desc.mShared.mMutex);
+					std::lock_guard<std::mutex> resultReportLck(shared.mMutex);
 #endif
 
-					if (desc.mShared.mFinished)
+					if (shared.mFinished)
 						break;
 
 					// At this point, we have the lock & we havent finished!
 					// Lets directly push it
 
-					desc.mShared.mResult.push_back(currMatch);
+					shared.mResult.push_back(currMatch);
 
-					if (desc.mShared.mScanType != EScan::SCAN_FIRST)
+					if (shared.mScanType != EScan::SCAN_FIRST)
 						continue;
 
 					// At this point seems we are searching for a single result
 					// lets report finished state for the shared state & break 
 					// current search.
 
-					desc.mShared.mFinished = true;
+					shared.mFinished = true;
 					return false;
 				}
 			}
 
-			desc.mLastSearchPos = currSearchnigRange.mEnd - patternSize;
+			desc.mLastSearchPos = currSearchnigRange.mEnd - 1 - patternSize ;
 			++desc.mCurrentSearchRange;
 			return !(desc.mCurrentSearchRange == desc.mSearchRangeSlicer.end());
 		}
@@ -1148,26 +1176,37 @@ namespace TBS {
 
 	namespace Light {
 		template<typename T>
-		inline bool Scan(T _start, T _end, Pattern::Results& results, const Pattern::ParseResult& parse)
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const Pattern::ParseResult& parsed)
 		{
 			results.clear();
 
 			const UByte* start = (decltype(start))_start;
 			const UByte* end = (decltype(end))_end;
 
-			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
-			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
+			const auto solid = parsed.mTrimmedPattern[0];
+			const auto solidMask = parsed.mTrimmedCompareMask[0];
+			const auto patternSize = parsed.mTrimmedPattern.size() - 1;
 
-			for (
-				const UByte* found = Memory::SearchFirst(start, end, firstPatternByte);
-				found && (found + parse.mPattern.size() - 1) < end;
-				found = Memory::SearchFirst(found + 1, end, firstPatternByte))
+			const UByte* found = start - 1; // Minus one to bootstrap it with the next()
+
+			auto next = [&found, &solid, &solidMask, &end] {
+					if (!solidMask) // If solid is not solid, lets simply return [found + 1]
+					{
+						found++;
+						return;
+					}
+
+					found = Memory::SearchFirst(found + 1, end, solid);
+				};
+
+			for (next(); found && found + patternSize < end; next())
 			{
-				if (!Memory::CompareWithMask(
-					found - parse.mFirstSolidOff, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+				if (Memory::CompareWithMask(found, parsed.mTrimmedPattern.data(), parsed.mTrimmedPattern.size(),
+					parsed.mTrimmedCompareMask.data()
+				) == false)
 					continue;
 
-				results.push_back((TBS_RESULT_TYPE)(found - parse.mFirstSolidOff));
+				results.push_back((Pattern::Result)(found - parsed.mTrimmDisp));
 			}
 
 			return results.empty() == false;
@@ -1198,24 +1237,35 @@ namespace TBS {
 		}
 
 		template<typename T>
-		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const Pattern::ParseResult& parse)
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const Pattern::ParseResult& parsed)
 		{
 			const UByte* start = (decltype(start))_start;
 			const UByte* end = (decltype(end))_end;
 
-			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
-			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
+			const auto solid = parsed.mTrimmedPattern[0];
+			const auto solidMask = parsed.mTrimmedCompareMask[0];
+			const auto patternSize = parsed.mTrimmedPattern.size() - 1;
 
-			for (
-				const UByte* found = Memory::SearchFirst(start, end, firstPatternByte);
-				found && (found + parse.mPattern.size() - 1) < end;
-				found = Memory::SearchFirst(found + 1, end, firstPatternByte))
+			const UByte* found = start - 1; // Minus one to bootstrap it with the next()
+
+			auto next = [&found, &solid, &solidMask, &end] {
+					if (!solidMask) // If solid is not solid, lets simply return [found + 1]
+					{
+						found++;
+						return;
+					}
+
+					found = Memory::SearchFirst(found + 1, end, solid);
+				};
+
+			for (next(); found && found + patternSize < end; next())
 			{
-				if (!Memory::CompareWithMask(
-					found - parse.mFirstSolidOff, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+				if (Memory::CompareWithMask(found, parsed.mTrimmedPattern.data(), parsed.mTrimmedPattern.size(),
+					parsed.mTrimmedCompareMask.data()
+				) == false)
 					continue;
 
-				result = (TBS_RESULT_TYPE)(found - parse.mFirstSolidOff);
+				result = (Pattern::Result)(found - parsed.mTrimmDisp);
 				return true;
 			}
 
