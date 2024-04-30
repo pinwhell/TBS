@@ -1182,16 +1182,16 @@ namespace TBS {
 			const auto firstWildcard = parse.mCompareMask.at(parse.mFirstSolidOff);
 			const auto firstPatternByte = parse.mPattern.at(parse.mFirstSolidOff) & firstWildcard;
 
-			for (const UByte* i = start; i + parse.mPattern.size() < end; i++)
+			for (
+				const UByte* found = Memory::SearchFirst(start, end, firstPatternByte);
+				found && (found + parse.mPattern.size() - 1) < end;
+				found = Memory::SearchFirst(found + 1, end, firstPatternByte))
 			{
-				if ((*(i + parse.mFirstSolidOff) & firstWildcard) != firstPatternByte)
-					continue;
-
 				if (!Memory::CompareWithMask(
-					i, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
+					found - parse.mFirstSolidOff, parse.mPattern.data(), parse.mPattern.size(), parse.mCompareMask.data()))
 					continue;
 
-				results.push_back((TBS_RESULT_TYPE)i);
+				results.push_back((TBS_RESULT_TYPE) (found - parse.mFirstSolidOff));
 			}
 
 			return results.empty() == false;

@@ -223,6 +223,12 @@ TEST_CASE("Pattern Scan #1")
 		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
 	};
 
+	TBS::Pattern::Results res;
+	TBS::Light::Scan(testCase, testCase + sizeof(testCase), res, "AA ? BB ? CC ? DD ? EE ? FF");
+
+	CHECK(res.size() == 1);
+	CHECK((UByte*)res[0] == testCase);
+
 	State<> state(testCase, testCase + sizeof(testCase));
 
 	state.AddPattern(
@@ -348,6 +354,12 @@ TEST_CASE("Pattern Scan #3")
 	UByte testCase[] = {
 		0xAA, 0x00, 0xBB, 0x11, 0xCC, 0x22, 0xDD, 0x33, 0xEE, 0x44, 0xFF
 	};
+
+	TBS::Pattern::Results res;
+	TBS::Light::Scan(testCase, testCase + sizeof(testCase), res, "\xAA\x00\xBB\x00\xCC\x00\xDD\x00\xEE\x00\xFF", "x?x?x?x?x?x");
+
+	CHECK(res.size() == 1);
+	CHECK((UByte*)res[0] == testCase);
 
 	State<25> state(testCase, testCase + sizeof(testCase));
 
