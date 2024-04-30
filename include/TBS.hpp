@@ -1148,30 +1148,6 @@ namespace TBS {
 
 	namespace Light {
 		template<typename T>
-		inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
-		{
-			Pattern::ParseResult parse;
-
-			if (Pattern::Parse(pattern, mask, parse) == false)
-				return false;
-
-
-			return Scan<T>(_start, _end, results, parse);
-		}
-
-		template<typename T>
-		inline bool Scan(T _start, T _end, Pattern::Results& results, const char* pattern)
-		{
-			Pattern::ParseResult parse;
-
-			if (Pattern::Parse(pattern, parse) == false)
-				return false;
-
-
-			return Scan<T>(_start, _end, results, parse);
-		}
-
-		template<typename T>
 		inline bool Scan(T _start, T _end, Pattern::Results& results, const Pattern::ParseResult& parse)
 		{
 			results.clear();
@@ -1198,7 +1174,7 @@ namespace TBS {
 		}
 
 		template<typename T>
-		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const void* pattern, const char* mask)
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const void* pattern, const char* mask)
 		{
 			Pattern::ParseResult parse;
 
@@ -1206,11 +1182,11 @@ namespace TBS {
 				return false;
 
 
-			return ScanOne<T>(_start, _end, result, parse);
+			return Scan<T>(_start, _end, results, parse);
 		}
 
 		template<typename T>
-		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const char* pattern)
+		inline bool Scan(T _start, T _end, Pattern::Results& results, const char* pattern)
 		{
 			Pattern::ParseResult parse;
 
@@ -1218,7 +1194,7 @@ namespace TBS {
 				return false;
 
 
-			return ScanOne<T>(_start, _end, result, parse);
+			return Scan<T>(_start, _end, results, parse);
 		}
 
 		template<typename T>
@@ -1245,5 +1221,30 @@ namespace TBS {
 
 			return false;
 		}
+
+		template<typename T>
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const void* pattern, const char* mask)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, mask, parse) == false)
+				return false;
+
+
+			return ScanOne<T>(_start, _end, result, parse);
+		}
+
+		template<typename T>
+		inline bool ScanOne(T _start, T _end, Pattern::Result& result, const char* pattern)
+		{
+			Pattern::ParseResult parse;
+
+			if (Pattern::Parse(pattern, parse) == false)
+				return false;
+
+
+			return ScanOne<T>(_start, _end, result, parse);
+		}
+
 	}
 }
