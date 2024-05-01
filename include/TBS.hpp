@@ -237,7 +237,7 @@ namespace TBS {
 			return (high << 4) | low;
 		}
 
-		const UByte* SearchFirstOne2One(const UByte* start, const UByte* end, UByte byte)
+		inline const UByte* SearchFirstOne2One(const UByte* start, const UByte* end, UByte byte)
 		{
 			for (const UByte* i = start; i != end; ++i) {
 				if (*i != byte)
