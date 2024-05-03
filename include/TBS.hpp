@@ -8,6 +8,13 @@
 #define TBS_STRING_MAX_SIZE 128
 #endif
 
+#ifdef _MSC_VER
+#define ALIGN(alignment) __declspec(align((alignment)))
+#else
+#define ALIGN(alignment) __attribute__ ((aligned((alignment))))
+#endif
+
+
 #ifdef TBS_USE_ETL
 
 #include <etl/to_string.h>
@@ -610,8 +617,8 @@ namespace TBS {
 				return mParseSuccess;
 			}
 
-			Vector<UByte> mPattern;
-			Vector<UByte> mCompareMask;
+			ALIGN(16) Vector<UByte> mPattern;
+			ALIGN(16) Vector<UByte> mCompareMask;
 			size_t mTrimmDisp;
 			bool mParseSuccess;
 
@@ -837,7 +844,7 @@ namespace TBS {
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
 			const UByte* mLastSearchPos;
-			ParseResult mParsed;
+			ALIGN(16) ParseResult mParsed;
 
 		private:
 
@@ -1097,7 +1104,7 @@ namespace TBS {
 		const UByte* mDefaultScanStart;
 		const UByte* mDefaultScanEnd;
 		UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY> mSharedDescriptions;
-		Vector<Pattern::Description, DESCS_CAPACITY> mDescriptionts;
+		ALIGN(16) Vector<Pattern::Description, DESCS_CAPACITY> mDescriptionts;
 	};
 
 	template<typename StateT>
