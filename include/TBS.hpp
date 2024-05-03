@@ -1195,6 +1195,9 @@ namespace TBS {
 			const UByte* start = (decltype(start))_start;
 			const UByte* end = (decltype(end))_end;
 
+			if (start >= end)
+				return false;
+
 			const auto patternSize = parsed.getTrimmedSize();
 
 			const UByte* found = start - 1; // Minus one to bootstrap it with the next()
@@ -1253,6 +1256,9 @@ namespace TBS {
 
 			const UByte* start = (decltype(start))_start;
 			const UByte* end = (decltype(end))_end;
+
+			if (start >= end)
+				return false;
 
 			const auto patternSize = parsed.getTrimmedSize();
 
