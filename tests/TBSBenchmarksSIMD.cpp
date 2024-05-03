@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <random>
 #include <iostream>
+#include <chrono>
 
 #define TBS_IMPL_SSE2
 #define TBS_IMPL_AVX
