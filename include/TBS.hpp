@@ -318,7 +318,7 @@ namespace TBS {
 	#endif
 				}
 				
-				inline int FirstMatchingByteIndex(__m128i a, __m128i b) {
+				static int FirstMatchingByteIndex(__m128i a, __m128i b) {
 					__m128i cmp_result = _mm_cmpeq_epi8(a, b);
 
 					// Convert comparison result to mask
@@ -399,7 +399,7 @@ namespace TBS {
 #endif
 				}
 
-				inline int FirstMatchingByteIndex(__m256i a, __m256i b) {
+				static int FirstMatchingByteIndex(__m256i a, __m256i b) {
 					__m256i cmp_result = _mm256_cmpeq_epi8(a, b);
 
 					// Convert comparison result to mask
