@@ -25,7 +25,7 @@
 
 #else
 #define STL_ETL(stl,etl) stl
-#define TBS_STL_INC(x) < x >
+#define TBS_STL_INC(x) <x>
 
 #include <string.h>
 #endif
@@ -89,7 +89,9 @@
 #define CTZ(x) [x]{unsigned long index = 0; _BitScanForward((unsigned long *)&index, x); return index; }()
 #include <intrin.h> // For __cpuid
 #elif defined(__GNUC__) || defined(__clang__)
+#if defined(__i386__) || defined(__x86_64__)
 #include <cpuid.h> // For __get_cpuid
+#endif
 #define CTZ(x) __builtin_ctz(x)
 #endif
 
@@ -142,12 +144,12 @@ namespace TBS {
 	/*
 		Assumed to be 0x1000 for simplicity
 	*/
-	constexpr U64 PAGE_SIZE = 0x1000;
+	constexpr U64 PG_SIZE = 0x1000;
 
 	/*
 		10 Pages per Pattern Slice Scan
 	*/
-	constexpr U64 PATTERN_SEARCH_SLICE_SIZE = PAGE_SIZE * 10;
+	constexpr U64 PATTERN_SEARCH_SLICE_SIZE = PG_SIZE * 10;
 
 #ifdef TBS_MT
 	namespace Thread {
@@ -308,7 +310,7 @@ namespace TBS {
 					int CPUInfo[4];
 					__cpuid(CPUInfo, 1);
 					return (CPUInfo[3] & (1 << 26)) != 0; // Check bit 26 of EDX
-	#elif defined(__GNUC__) || defined(__clang__)
+	#elif defined(__GNUC__) || defined(__clang__) && defined(__i386__) || defined(__x86_64__)
 					unsigned int eax, ebx, ecx, edx;
 					__get_cpuid(1, &eax, &ebx, &ecx, &edx);
 					return (edx & (1 << 26)) != 0; // Check bit 26 of EDX
