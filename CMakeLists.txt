@@ -51,9 +51,32 @@ if(TBS_USE_ARCH_WORD_SIMD)
     target_compile_definitions(TBS INTERFACE TBS_USE_ARCH_WORD_SIMD)
 endif()
     
+target_include_directories(TBS INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 
-target_include_directories(TBS INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_subdirectory(cli)
 
 if(TBS_TESTS)
 	add_subdirectory(tests)
 endif()
+
+install(TARGETS TBS
+        EXPORT TBSTargets
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin)
+
+install(EXPORT TBSTargets
+        FILE TBSTargets.cmake
+        NAMESPACE TBS::
+        DESTINATION lib/cmake/TBS)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        DESTINATION include)
+
+configure_file(cmake/TBSConfig.cmake.in
+               ${CMAKE_CURRENT_BINARY_DIR}/TBSConfig.cmake
+               @ONLY)
+
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/TBSConfig.cmake
+        DESTINATION lib/cmake/TBS)

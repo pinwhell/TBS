@@ -1,0 +1,3 @@
+@PACKAGE_INIT@ # Init
+
+include("${CMAKE_CURRENT_LIST_DIR}/TBSTargets.cmake") # Targets

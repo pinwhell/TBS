@@ -1,6 +1,3 @@
-[submodule "vendor/doctest"]
-	path = vendor/doctest
-	url = https://github.com/doctest/doctest.git
 [submodule "vendor/etl"]
 	path = vendor/etl
 	url = https://github.com/ETLCPP/etl.git
