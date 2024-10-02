@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(TBS)
+set(MAIN_PROJECT OFF)
+
+if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+project(TBS)	
+set(MAIN_PROJECT ON)
+endif()
 
 include (CBuildKit)
 
-option(TBS_TESTS "TBS with Tests" ON)
+option(TBS_TESTS "TBS with Tests" ${MAIN_PROJECT})
 option(TBS_MT "Enable multithreading in TBS" OFF)
 option(TBS_USE_SSE2 "Enable SSE2 in TBS" OFF)
 option(TBS_USE_AVX "Enable AVX in TBS" OFF)
