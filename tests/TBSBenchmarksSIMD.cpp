@@ -7,7 +7,7 @@
 #define TBS_IMPL_AVX
 #define TBS_IMPL_ARCH_WORD_SIMD
 
-#include <TBS.hpp>
+#include <TBS/TBS.hpp>
 
 using namespace TBS;
 

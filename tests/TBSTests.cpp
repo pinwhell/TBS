@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <iostream>
-#include <TBS.hpp>
+#include <TBS/TBS.hpp>
 
 using namespace TBS;
 
