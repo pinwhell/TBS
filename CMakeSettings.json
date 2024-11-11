@@ -33,6 +33,11 @@
           "name": "TBS_USE_ETL",
           "value": "False",
           "type": "BOOL"
+        },
+        {
+          "name": "TBS_INSTALL",
+          "value": "True",
+          "type": "BOOL"
         }
       ]
     },
