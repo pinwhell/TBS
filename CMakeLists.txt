@@ -8,7 +8,7 @@ if(NOT TBS_INSTALL)
 set(CBUILDKIT_NOINSTALL ON)
 endif()
 
-include (CBuildKit)
+find_package(CBuildKit REQUIRED)
 
 option(TBS_MT "Enable multithreading in TBS" OFF)
 option(TBS_USE_SSE2 "Enable SSE2 in TBS" OFF)
