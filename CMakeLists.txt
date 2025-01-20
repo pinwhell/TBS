@@ -24,7 +24,7 @@ endif()
 
 add_subdirectory(vendor)
 
-add_library_ns(tbs tbs INTERFACE)
+add_library_ns(tbs tbs STATIC null.cpp)
 
 if(MSVC)
     # Set the minimum required version for SSE2
