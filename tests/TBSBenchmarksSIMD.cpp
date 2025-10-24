@@ -70,7 +70,7 @@ TEST_CASE("Benchmark MemoryCompares")
 	{
 		// Measure the time taken by CompareWithMaskWord
 		auto start = std::chrono::high_resolution_clock::now();
-		bool result = Memory::SIMD::Platform::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
+		bool result = Memory::SIMD::Platform::Compare(chunk1, chunk2, chunkSize, wildCardMask);
 		auto end = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double> elapsed = end - start;
 		elapsedMicrosecondsPlatformWord += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
@@ -83,7 +83,7 @@ TEST_CASE("Benchmark MemoryCompares")
 	{
 		// Measure the time taken by Memory::SSE2::CompareWithMask
 		auto start = std::chrono::high_resolution_clock::now();
-		bool result = Memory::SIMD::SSE2::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
+		bool result = Memory::SIMD::SSE2::Compare(chunk1, chunk2, chunkSize, wildCardMask);
 		auto end = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double> elapsed = end - start;
 		elapsedMicrosecondsSSE2 += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
@@ -95,9 +95,9 @@ TEST_CASE("Benchmark MemoryCompares")
 #ifdef TBS_IMPL_AVX
 	for (size_t i = 0; i < iterations; i++)
 	{
-		// Measure the time taken by Memory::AVX::CompareWithMask
+		// Measure the time taken by Memory::AVX::Compare
 		auto start = std::chrono::high_resolution_clock::now();
-		bool result = Memory::SIMD::AVX::CompareWithMask(chunk1, chunk2, chunkSize, wildCardMask);
+		bool result = Memory::SIMD::AVX::Compare(chunk1, chunk2, chunkSize, wildCardMask);
 		auto end = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double> elapsed = end - start;
 		elapsedMicrosecondsAVX += std::chrono::duration_cast<std::chrono::microseconds>(elapsed);

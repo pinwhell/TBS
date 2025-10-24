@@ -15,6 +15,16 @@
           "name": "TBS_USE_ARCH_WORD_SIMD",
           "value": "True",
           "type": "BOOL"
+        },
+        {
+          "name": "TBS_USE_AVX",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "TBS_BUILD_TESTS",
+          "value": "True",
+          "type": "BOOL"
         }
       ]
     },
@@ -36,6 +46,16 @@
         },
         {
           "name": "TBS_INSTALL",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "TBS_BUILD_TESTS",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "TBS_USE_AVX",
           "value": "True",
           "type": "BOOL"
         }
@@ -74,6 +94,12 @@
           "type": "BOOL"
         }
       ]
+    },
+    {
+      "name": "armeabi-v7a-release",
+      "cacheRoot": "C:/Users/Wing/Documents/GitHub/TBS/build/Release_armeabi-v7a",
+      "inheritEnvironments": [],
+      "cacheGenerationCommand": "android-cmake-cfg Release armeabi-v7a"
     }
   ]
 }

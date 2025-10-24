@@ -242,7 +242,7 @@ int TBSCLI(int argc, const char* argv[])
     }
     catch (const std::exception& e)
     {
-        printf(e.what());
+        printf("%s", e.what());
         return 2;
     }
 
