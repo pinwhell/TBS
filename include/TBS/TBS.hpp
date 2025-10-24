@@ -631,6 +631,9 @@ namespace TBS {
 
 		static auto RTSearchFirst = [] {
 #ifdef TBS_USE_AVX
+			if (Memory::SIMD::AVX2::Supported())
+				return Memory::SIMD::AVX2::SearchFirst;
+
 			if (Memory::SIMD::AVX::Supported())
 				return Memory::SIMD::AVX::SearchFirst;
 #endif
