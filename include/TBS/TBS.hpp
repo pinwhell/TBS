@@ -103,8 +103,8 @@ namespace TBS {
 #endif
 		return data;
 	}
-}
 #endif
+}
 
 #if defined(_MSC_VER)
 #pragma intrinsic(_BitScanForward)
