@@ -18,6 +18,7 @@ public:
         : fileHandle(nullptr)
         , fileMapping(nullptr)
         , mapView(nullptr)
+        , hasError(false)
     {
         Init(filePath);
     }
@@ -36,9 +37,15 @@ public:
     {
         return fileSize;
     }
+    
+    bool has_error() const
+    {
+        return hasError;
+    }
 
 private:
     size_t fileSize;
+    bool hasError;
     union {
         void* fileHandle;
         int fileHandleI;
@@ -54,20 +61,25 @@ private:
     {
         fileSize = std::filesystem::file_size(filePath);
 
-        if ((fileSize > 0) == false)
-            throw std::runtime_error("Invalid File Size");
+        if ((fileSize > 0) == false) {
+            hasError = true;
+            return;
+        }
 
         fileHandleI = open(filePath, O_RDONLY);
 
-        if (fileHandleI < 0)
-            throw std::runtime_error("File Open Failed");
+        if (fileHandleI < 0) {
+            hasError = true;
+            return;
+        }
 
         mapView = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fileHandleI, 0);
 
         if (mapViewI == -1)
         {
             close(fileHandleI);
-            throw std::runtime_error("File Mapping Failed");
+            hasError = true;
+            return;
         }
     }
 
@@ -88,8 +100,10 @@ private:
     inline void Init(const char* filePath)
     {
         fileHandle = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (fileHandle == INVALID_HANDLE_VALUE)
-            throw std::runtime_error("Error opening file");
+        if (fileHandle == INVALID_HANDLE_VALUE) {
+            hasError = true;
+            return;
+        }
 
         fileSize = std::filesystem::file_size(filePath);
 
@@ -97,7 +111,8 @@ private:
         if (fileMapping == nullptr)
         {
             CloseHandle(fileHandle);
-            throw std::runtime_error("Error creating file mapping");
+            hasError = true;
+            return;
         }
 
         mapView = MapViewOfFile(fileMapping, FILE_MAP_READ, 0, 0, 0);
@@ -105,7 +120,8 @@ private:
         if (mapView == nullptr) {
             CloseHandle(fileMapping);
             CloseHandle(fileHandle);
-            throw std::runtime_error("Error mapping view of file");
+            hasError = true;
+            return;
         }
     }
 
@@ -177,74 +193,71 @@ int TBSCLI(int argc, const char* argv[])
     bNaked = result["naked"].as<bool>();
     bJson = result["json"].as<bool>();
 
-    try {
-        FileView fileView(file.c_str());
-        const char* fileBegin = (char*)((const void*)fileView);
-        const char* fileEnd = fileBegin + fileView.size();
-
-        const auto handleSingleResult = [&] {
-            TBS::Pattern::Result result;
-
-            if (!TBS::Light::ScanOne(fileBegin, fileEnd, result, pattern.c_str()))
-            {
-                printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
-                return 3;
-            }
-
-            if (bJson) 
-                
-                printf(
-                R"({
-                    \"%s\" : %d
-                })", pattern.c_str(), result - (size_t)fileBegin);
-            
-            else printf("0x%016Xll", result - (size_t)fileBegin);
-
-            return 0;
-            };
-
-        const auto handleMultiResult = [&] {
-            TBS::Pattern::Results results;
-
-            if (!TBS::Light::Scan(fileBegin, fileEnd, results, pattern.c_str()))
-            {
-                printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
-                return 3;
-            }
-
-            if (bJson)
-            {
-                printf(
-                    R"({
-                    \"%s\" : [
-                ])", pattern.c_str());
-
-                for (size_t i = 0; i < results.size(); i++)
-                {
-                    if (i != 0)
-                        printf(", ");
-
-                    printf("%ull", results[i] - (size_t)fileBegin);
-                }
-
-                printf("]\n}");
-
-                return 0;
-            }
-
-            for (auto res : results)
-                printf("0x%016Xll\n", res - (size_t)fileBegin);
-
-            return 0;
-            };
-
-        return (bSingleRes ? handleSingleResult() : handleMultiResult());
-    }
-    catch (const std::exception& e)
-    {
-        printf(e.what());
+    FileView fileView(file.c_str());
+    
+    if (fileView.has_error()) {
+        printf("Failed to open/map file '%s'\n", file.c_str());
         return 2;
     }
+    
+    const char* fileBegin = (char*)((const void*)fileView);
+    const char* fileEnd = fileBegin + fileView.size();
 
-    return 0;
+    const auto handleSingleResult = [&] {
+        TBS::Pattern::Result result;
+
+        if (!TBS::Light::ScanOne(fileBegin, fileEnd, result, pattern.c_str()))
+        {
+            printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
+            return 3;
+        }
+
+        if (bJson) 
+            
+            printf(
+            R"({
+                "%s" : %d
+            })", pattern.c_str(), result - (size_t)fileBegin);
+        
+        else printf("0x%016Xll", result - (size_t)fileBegin);
+
+        return 0;
+        };
+
+    const auto handleMultiResult = [&] {
+        TBS::Pattern::Results results;
+
+        if (!TBS::Light::Scan(fileBegin, fileEnd, results, pattern.c_str()))
+        {
+            printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
+            return 3;
+        }
+
+        if (bJson)
+        {
+            printf(
+                R"({
+                "%s" : [
+            ])", pattern.c_str());
+
+            for (size_t i = 0; i < results.size(); i++)
+            {
+                if (i != 0)
+                    printf(", ");
+
+                printf("%ull", results[i] - (size_t)fileBegin);
+            }
+
+            printf("]\n}");
+
+            return 0;
+        }
+
+        for (auto res : results)
+            printf("0x%016Xll\n", res - (size_t)fileBegin);
+
+        return 0;
+        };
+
+    return (bSingleRes ? handleSingleResult() : handleMultiResult());
 }
