@@ -8,13 +8,6 @@
 #define TBS_STRING_MAX_SIZE 128
 #endif
 
-#ifdef _MSC_VER
-#define ALIGN(alignment) __declspec(align((alignment)))
-#else
-#define ALIGN(alignment) __attribute__ ((aligned((alignment))))
-#endif
-
-
 #ifdef TBS_USE_ETL
 
 #include <etl/to_string.h>
@@ -83,15 +76,40 @@
 #include <immintrin.h>
 #endif
 
-
+// Intrinsic Already Included
 #if defined(_MSC_VER)
-#pragma intrinsic(_BitScanForward)
-#define CTZ(x) [x]{unsigned long index = 0; _BitScanForward((unsigned long *)&index, x); return index; }()
 #include <intrin.h> // For __cpuid
 #elif defined(__GNUC__) || defined(__clang__)
 #if defined(__i386__) || defined(__x86_64__)
 #include <cpuid.h> // For __get_cpuid
 #endif
+#endif
+
+namespace TBS {
+#if defined(TBS_USE_AVX) || defined(TBS_USE_SSE2)
+#pragma pack(push, 1)
+	struct CPUIDData {
+		int EAX, EBX, ECX, EDX;
+	};
+#pragma pack(pop)
+
+	CPUIDData CPUID(int type)
+	{
+		CPUIDData data{};
+#if defined(_MSC_VER)
+		__cpuid((int*)&data, type);
+#elif defined(__GNUC__) || defined(__clang__) && defined(__i386__) || defined(__x86_64__)
+		__get_cpuid(type, &data.EAX, &data.EBX, &data.ECX, &data.EDX);
+#endif
+		return data;
+	}
+#endif
+}
+
+#if defined(_MSC_VER)
+#pragma intrinsic(_BitScanForward)
+#define CTZ(x) [x]{unsigned long index = 0; _BitScanForward((unsigned long *)&index, x); return index; }()
+#elif defined(__GNUC__) || defined(__clang__)
 #define CTZ(x) __builtin_ctz(x)
 #endif
 
@@ -246,7 +264,7 @@ namespace TBS {
 			return (high << 4) | low;
 		}
 
-		inline const UByte* SearchFirstOne2One(const UByte* start, const UByte* end, UByte byte)
+		inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
 		{
 			for (const UByte* i = start; i != end; ++i) {
 				if (*i != byte)
@@ -258,16 +276,16 @@ namespace TBS {
 			return nullptr; // Byte not found
 		}
 
-		inline bool CompareWithMaskOne2One(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
-        { 
+		inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* mask)
+		{
 			for (size_t i = 0; i < len; i++)
-            {
-                UByte b1 = chunk1[i] & compareMask[i];
-                UByte b2 = chunk2[i] & compareMask[i];
+			{
+				UByte b1 = chunk1[i] & mask[i];
+				UByte b2 = chunk2[i] & mask[i];
 
-                if (b1 != b2)
-                    return false;
-            }
+				if (b1 != b2)
+					return false;
+			}
 
 			return true;
 		}
@@ -276,15 +294,15 @@ namespace TBS {
 
 			namespace Platform {
 #ifdef TBS_IMPL_ARCH_WORD_SIMD
-				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
+				inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* mask) {
 					// UPtr ==> Platform Word Length
 					size_t wordLen = len / sizeof(UPtr); // Calculate length in words
 
 					for (size_t i = 0; i < wordLen; i++) {
 						// Convert byte index to word index
-						const UPtr wordMask = *((const UPtr*)compareMask + i);
-						const UPtr maskedChunk1 = *((const UPtr*)chunk1 + i) & wordMask;
-						const UPtr maskedChunk2 = *((const UPtr*)chunk2 + i) & wordMask;
+						const UPtr bmask = *((const UPtr*)mask + i);
+						const UPtr maskedChunk1 = *((const UPtr*)chunk1 + i) & bmask;
+						const UPtr maskedChunk2 = *((const UPtr*)chunk2 + i) & bmask;
 						if (maskedChunk1 != maskedChunk2)
 							return false;
 					}
@@ -296,8 +314,11 @@ namespace TBS {
 
 					// Calculate the starting index of the last incomplete word
 					size_t lastWordIndex = wordLen * sizeof(UPtr);
-					return Memory::CompareWithMaskOne2One(
-						chunk1 + lastWordIndex, chunk2 + lastWordIndex, len - lastWordIndex, compareMask + lastWordIndex);
+					return Memory::Compare(
+						chunk1 + lastWordIndex,
+						chunk2 + lastWordIndex,
+						len - lastWordIndex,
+						mask + lastWordIndex);
 				}
 #endif
 			}
@@ -306,20 +327,10 @@ namespace TBS {
 			namespace SSE2 {
 				inline bool Supported()
 				{
-	#if defined(_MSC_VER)
-					int CPUInfo[4];
-					__cpuid(CPUInfo, 1);
-					return (CPUInfo[3] & (1 << 26)) != 0; // Check bit 26 of EDX
-	#elif defined(__GNUC__) || defined(__clang__) && defined(__i386__) || defined(__x86_64__)
-					unsigned int eax, ebx, ecx, edx;
-					__get_cpuid(1, &eax, &ebx, &ecx, &edx);
-					return (edx & (1 << 26)) != 0; // Check bit 26 of EDX
-	#else
-					// Unsupported compiler/platform
-					return false;
-	#endif
+					auto data = TBS::CPUID(1);
+					return (data.EDX & (1 << 26)) != 0;
 				}
-				
+
 				static int FirstMatchingByteIndex(__m128i a, __m128i b) {
 					__m128i cmp_result = _mm_cmpeq_epi8(a, b);
 
@@ -340,7 +351,7 @@ namespace TBS {
 					__m128i searching = _mm_set1_epi8(byte);
 
 					for (size_t i = 0; i < wordLen; i++) {
-						const __m128i currScanning = _mm_load_si128((const __m128i*) start + i);
+						const __m128i currScanning = _mm_loadu_si128((const __m128i*) start + i);
 
 						int foundIndex = FirstMatchingByteIndex(currScanning, searching);
 
@@ -353,17 +364,20 @@ namespace TBS {
 					if (searchLen % sizeof(__m128i) == 0)
 						return nullptr;
 
-					return SearchFirstOne2One(start + wordLen * sizeof(__m128i), end, byte); // Nothing Matched
+					return Memory::SearchFirst(
+						start + wordLen * sizeof(__m128i),
+						end,
+						byte); // Nothing Matched
 				}
 
-				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask) {
+				inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* mask) {
 					const size_t wordLen = len / sizeof(__m128i); // Calculate length in words
 
 					for (size_t i = 0; i < wordLen; i++) {
 						// Convert byte index to word index
-						const __m128i wordMask = _mm_load_si128((const __m128i*) compareMask + i);
-						const __m128i maskedChunk1 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk1 + i), wordMask);
-						const __m128i maskedChunk2 = _mm_and_si128(_mm_load_si128((const __m128i*)chunk2 + i), wordMask);
+						const __m128i wordMask = _mm_loadu_si128((const __m128i*) mask + i);
+						const __m128i maskedChunk1 = _mm_and_si128(_mm_loadu_si128((const __m128i*)chunk1 + i), wordMask);
+						const __m128i maskedChunk2 = _mm_and_si128(_mm_loadu_si128((const __m128i*)chunk2 + i), wordMask);
 
 						if (_mm_movemask_epi8(_mm_cmpeq_epi32(maskedChunk1, maskedChunk2)) != 0xFFFF)
 							return false;
@@ -376,7 +390,11 @@ namespace TBS {
 
 					const size_t lastWordIndex = wordLen * sizeof(__m128i);
 
-					return Platform::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m128i), compareMask + lastWordIndex);
+					return Platform::Compare(
+						chunk1 + lastWordIndex,
+						chunk2 + lastWordIndex,
+						len % sizeof(__m128i),
+						mask + lastWordIndex);
 				}
 			}
 #endif
@@ -387,18 +405,36 @@ namespace TBS {
 			{
 				inline bool Supported()
 				{
-#if defined(_MSC_VER)
-					int CPUInfo[4];
-					__cpuid(CPUInfo, 1);
-					return (CPUInfo[2] & (1 << 28)) != 0; // Check bit 28 of ECX
-#elif defined(__GNUC__) || defined(__clang__)
-					unsigned int eax, ebx, ecx, edx;
-					__get_cpuid(1, &eax, &ebx, &ecx, &edx);
-					return (ecx & (1 << 28)) != 0; // Check bit 28 of ECX
-#else
-					// Unsupported compiler/platform
-					return false;
-#endif
+					auto data = TBS::CPUID(1);
+					return ((data.ECX & (1 << 27)) != 0) &&
+						((data.ECX & (1 << 28)) != 0);
+				}
+
+				inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
+				{
+					/*Unimplemented Falling back to SSE2*/
+					return SSE2::SearchFirst(
+						start,
+						end,
+						byte);
+				}
+
+				inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* mask)
+				{
+					/*Unimplemented Falling back to SSE2*/
+					return SSE2::Compare(
+						chunk1,
+						chunk2,
+						len,
+						mask);
+				}
+			} // namespace AVX
+
+			namespace AVX2 {
+				inline bool Supported()
+				{
+					return AVX::Supported()
+						&& (TBS::CPUID(7).ECX & (1 << 5)) != 0;
 				}
 
 				static int FirstMatchingByteIndex(__m256i a, __m256i b) {
@@ -421,7 +457,7 @@ namespace TBS {
 					__m256i searching = _mm256_set1_epi8(byte);
 
 					for (size_t i = 0; i < wordLen; i++) {
-						const __m256i currScanning = _mm256_load_si256((const __m256i*) start + i);
+						const __m256i currScanning = _mm256_loadu_si256((const __m256i*) start + i);
 
 						int foundIndex = FirstMatchingByteIndex(currScanning, searching);
 
@@ -437,16 +473,16 @@ namespace TBS {
 					return SSE2::SearchFirst(start + wordLen * sizeof(__m256i), end, byte); // Nothing Matched
 				}
 
-				inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
+				inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* mask)
 				{
 					const size_t wordLen = len / sizeof(__m256i); // Calculate length in words
 
 					for (size_t i = 0; i < wordLen; i++)
 					{
 						// Convert byte index to word index
-						const __m256i wordMask = _mm256_load_si256((const __m256i*) compareMask + i);
-						const __m256i maskedChunk1 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk1 + i), wordMask);
-						const __m256i maskedChunk2 = _mm256_and_si256(_mm256_load_si256((const __m256i*) chunk2 + i), wordMask);
+						const __m256i wordMask = _mm256_loadu_si256((const __m256i*) mask + i);
+						const __m256i maskedChunk1 = _mm256_and_si256(_mm256_loadu_si256((const __m256i*) chunk1 + i), wordMask);
+						const __m256i maskedChunk2 = _mm256_and_si256(_mm256_loadu_si256((const __m256i*) chunk2 + i), wordMask);
 
 						if (_mm256_movemask_epi8(_mm256_cmpeq_epi64(maskedChunk1, maskedChunk2)) != 0xFFFFFFFF)
 							return false;
@@ -459,55 +495,14 @@ namespace TBS {
 
 					const size_t lastWordIndex = wordLen * sizeof(__m256i);
 
-					return SSE2::CompareWithMask(chunk1 + lastWordIndex, chunk2 + lastWordIndex, len % sizeof(__m256i),
-						compareMask + lastWordIndex);
+					return SSE2::Compare(
+						chunk1 + lastWordIndex,
+						chunk2 + lastWordIndex,
+						len % sizeof(__m256i),
+						mask + lastWordIndex);
 				}
-			} // namespace AVX
+			}
 #endif
-		}
-
-		inline bool CompareWithMask(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
-		{
-			static auto RTCompareWithMask = [] {
-#ifdef TBS_USE_AVX
-				if(SIMD::AVX::Supported())
-					return SIMD::AVX::CompareWithMask;
-#endif
-
-#ifdef TBS_USE_SSE2
-				if (SIMD::AVX::Supported())
-					return SIMD::AVX::CompareWithMask;
-#endif
-
-#ifdef TBS_USE_ARCH_WORD_SIMD
-				return SIMD::Platform::CompareWithMask;
-#else 
-				return CompareWithMaskOne2One;
-#endif
-				}();
-
-			return RTCompareWithMask(chunk1, chunk2, len, compareMask);
-		}
-
-		inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
-		{
-			if (start >= end)
-				return nullptr;
-
-			static auto RTSearchFirst = [] {
-#ifdef TBS_USE_AVX
-				if (SIMD::AVX::Supported())
-					return SIMD::AVX::SearchFirst;
-#endif
-
-#ifdef TBS_USE_SSE2
-				if (SIMD::SSE2::Supported())
-					return SIMD::SSE2::SearchFirst;
-#endif
-				return SearchFirstOne2One;
-				}();
-
-			return RTSearchFirst(start, end, byte);
 		}
 
 		template<typename T = UPtr>
@@ -603,6 +598,56 @@ namespace TBS {
 		};
 	}
 
+	inline bool Compare(const UByte* chunk1, const UByte* chunk2, size_t len, const UByte* compareMask)
+	{
+		static auto RTCompare = [] {
+#ifdef TBS_USE_AVX
+			if (Memory::SIMD::AVX2::Supported())
+				return Memory::SIMD::AVX2::Compare;
+
+			if (Memory::SIMD::AVX::Supported())
+				return Memory::SIMD::AVX::Compare;
+#endif
+
+#ifdef TBS_USE_SSE2
+			if (Memory::SIMD::SSE2::Supported())
+				return Memory::SIMD::SSE2::Compare;
+#endif
+
+#ifdef TBS_USE_ARCH_WORD_SIMD
+			return Memory::SIMD::Platform::Compare;
+#else 
+			return Memory::Compare;
+#endif
+			}();
+
+		return RTCompare(chunk1, chunk2, len, compareMask);
+	}
+
+	inline const UByte* SearchFirst(const UByte* start, const UByte* end, UByte byte)
+	{
+		if (start >= end)
+			return nullptr;
+
+		static auto RTSearchFirst = [] {
+#ifdef TBS_USE_AVX
+			if (Memory::SIMD::AVX2::Supported())
+				return Memory::SIMD::AVX2::SearchFirst;
+
+			if (Memory::SIMD::AVX::Supported())
+				return Memory::SIMD::AVX::SearchFirst;
+#endif
+
+#ifdef TBS_USE_SSE2
+			if (Memory::SIMD::SSE2::Supported())
+				return Memory::SIMD::SSE2::SearchFirst;
+#endif
+			return Memory::SearchFirst;
+			}();
+
+		return RTSearchFirst(start, end, byte);
+	}
+
 	namespace Pattern
 	{
 		using Result = TBS_RESULT_TYPE;
@@ -619,8 +664,8 @@ namespace TBS {
 				return mParseSuccess;
 			}
 
-			ALIGN(16) Vector<UByte> mPattern;
-			ALIGN(16) Vector<UByte> mCompareMask;
+			Vector<UByte> mPattern;
+			Vector<UByte> mCompareMask;
 			size_t mTrimmDisp;
 			bool mParseSuccess;
 
@@ -655,10 +700,10 @@ namespace TBS {
 			size_t patternLen = StringLength(mask);
 
 			result.mPattern.resize(patternLen);
-            result.mCompareMask.resize(patternLen);
+			result.mCompareMask.resize(patternLen);
 
 			memcpy(result.mPattern.data(), _pattern, patternLen);
-            memset(result.mCompareMask.data(), 0xFF, patternLen);
+			memset(result.mCompareMask.data(), 0xFF, patternLen);
 
 			bool bFirstSolidFound = false;
 
@@ -667,7 +712,7 @@ namespace TBS {
 				if (mask[i] == '?')
 				{
 					result.mPattern[i] = 0x00;
-                    result.mCompareMask[i] = 0x00;
+					result.mCompareMask[i] = 0x00;
 
 					continue;
 				}
@@ -692,14 +737,14 @@ namespace TBS {
 			const char* c = pattern.c_str();
 			bool bFirstSolidFound = false;
 
-			for(int i = 0; *c; i++)
+			for (int i = 0; *c; i++)
 			{
 				String<> str;
-				
+
 				for (; *c && *c == ' '; c++)
 					;
 
-				for(; *c && *c != ' ' ; c++)
+				for (; *c && *c != ' '; c++)
 					str.push_back(*c);
 
 				if (str.size() > 2)
@@ -722,7 +767,7 @@ namespace TBS {
 				{
 					// At this point we are dealing with Full Byte Wildcard Case
 					result.mPattern.emplace_back(UByte(0x00u));
-                    result.mCompareMask.emplace_back(UByte(0x00u));
+					result.mCompareMask.emplace_back(UByte(0x00u));
 					continue;
 				}
 
@@ -730,7 +775,7 @@ namespace TBS {
 				{
 					// Not Wilcarding this byte
 					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
-                    result.mCompareMask.emplace_back(UByte(0xFFull));
+					result.mCompareMask.emplace_back(UByte(0xFFull));
 					continue;
 				}
 
@@ -741,14 +786,14 @@ namespace TBS {
 					// At this point, we are dealing with High Part of Byte wildcarding "?X"
 					str[0] = '0';
 					result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
-                    result.mCompareMask.emplace_back(UByte(0x0Fu));
+					result.mCompareMask.emplace_back(UByte(0x0Fu));
 					continue;
 				}
 
 				// At this point, we are dealing with Low Part of Byte wildcarding "X?"
 				str[1] = '0';
 				result.mPattern.emplace_back(Memory::ByteFromString(str.c_str()));
-                result.mCompareMask.emplace_back(UByte(0xF0u));
+				result.mCompareMask.emplace_back(UByte(0xF0u));
 			}
 
 			return result.mParseSuccess = true;
@@ -846,7 +891,7 @@ namespace TBS {
 			SearchSlice::Container mSearchRangeSlicer;
 			SearchSlice::Container::Iterator mCurrentSearchRange;
 			const UByte* mLastSearchPos;
-			ALIGN(16) ParseResult mParsed;
+			ParseResult mParsed;
 
 		private:
 
@@ -887,7 +932,7 @@ namespace TBS {
 					return;
 				}
 
-				found = Memory::SearchFirst(found + 1, currSearchnigRange.mEnd, parsed.getTrimmedPattern()[0]);
+				found = SearchFirst(found + 1, currSearchnigRange.mEnd, parsed.getTrimmedPattern()[0]);
 				};
 
 			for (next(); found && found + patternSize - 1 < currSearchnigRange.mEnd; next())
@@ -895,7 +940,7 @@ namespace TBS {
 				if (shared.mFinished)
 					return false;
 
-				if (Memory::CompareWithMask(found, parsed.getTrimmedPattern(), patternSize,
+				if (Compare(found, parsed.getTrimmedPattern(), patternSize,
 					parsed.getTrimmedCompareMask()
 				) == false)
 					continue;
@@ -1106,7 +1151,7 @@ namespace TBS {
 		const UByte* mDefaultScanStart;
 		const UByte* mDefaultScanEnd;
 		UMap<String<>, UniquePtr<Pattern::SharedDescription>, SHAREDDESCS_CAPACITY> mSharedDescriptions;
-		ALIGN(16) Vector<Pattern::Description, DESCS_CAPACITY> mDescriptionts;
+		Vector<Pattern::Description, DESCS_CAPACITY> mDescriptionts;
 	};
 
 	template<typename StateT>
@@ -1137,19 +1182,19 @@ namespace TBS {
 				}
 #ifdef TBS_MT
 				threadPool.enqueue(
-				[&doneSearchingDescs, &doneSearchingDescsMtx](Pattern::Description* description)
-				{
-#endif
-					if (Pattern::Scan(*description) == false)
+					[&doneSearchingDescs, &doneSearchingDescsMtx](Pattern::Description* description)
 					{
-#ifdef TBS_MT
-						std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
 #endif
-						doneSearchingDescs.insert(description);
-					}
+						if (Pattern::Scan(*description) == false)
+						{
+#ifdef TBS_MT
+							std::lock_guard<std::mutex> lck(doneSearchingDescsMtx);
+#endif
+							doneSearchingDescs.insert(description);
+						}
 
 #ifdef TBS_MT
-				}, description);
+					}, description);
 #endif
 			}
 		}
@@ -1211,12 +1256,12 @@ namespace TBS {
 					return;
 				}
 
-				found = Memory::SearchFirst(found + 1, end, parsed.getTrimmedPattern()[0]);
+				found = SearchFirst(found + 1, end, parsed.getTrimmedPattern()[0]);
 				};
 
 			for (next(); found && found + patternSize - 1 < end; next())
 			{
-				if (Memory::CompareWithMask(found, parsed.getTrimmedPattern(), patternSize,
+				if (Compare(found, parsed.getTrimmedPattern(), patternSize,
 					parsed.getTrimmedCompareMask()
 				) == false)
 					continue;
@@ -1278,7 +1323,7 @@ namespace TBS {
 
 			for (next(); found && found + patternSize - 1 < end; next())
 			{
-				if (Memory::CompareWithMask(found, parsed.getTrimmedPattern(), patternSize,
+				if (Compare(found, parsed.getTrimmedPattern(), patternSize,
 					parsed.getTrimmedCompareMask()
 				) == false)
 					continue;

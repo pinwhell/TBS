@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(MAIN_PROJECT OFF)
+project(TBS)
 
-if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
-project(TBS)	
-set(MAIN_PROJECT ON)
+option(TBS_BUILD_TESTS "TBS Tests" OFF)
+option(TBS_INSTALL "TBS Install" ON)
+if(NOT TBS_INSTALL)
+set(CBUILDKIT_NOINSTALL ON)
 endif()
 
-include (CBuildKit)
+include(cmake/CBuildKit.cmake)
 
-option(TBS_TESTS "TBS with Tests" ${MAIN_PROJECT})
 option(TBS_MT "Enable multithreading in TBS" OFF)
 option(TBS_USE_SSE2 "Enable SSE2 in TBS" OFF)
 option(TBS_USE_AVX "Enable AVX in TBS" OFF)
@@ -24,17 +24,17 @@ endif()
 
 add_subdirectory(vendor)
 
-add_library_ns(tbs tbs INTERFACE)
+add_library_ns(tbs tbs STATIC null.cpp)
 
 if(MSVC)
     # Set the minimum required version for SSE2
     if(TBS_USE_SSE2)
-        # target_compile_options(tbs-tbs INTERFACE /arch:SSE2)
+        target_compile_options(tbs-tbs INTERFACE /arch:SSE2)
         target_compile_definitions(tbs-tbs INTERFACE TBS_USE_SSE2)
         message(STATUS "SSE2 support enabled.")
     endif()
     if(TBS_USE_AVX)
-        # target_compile_options(tbs-tbs INTERFACE /arch:AVX)
+        target_compile_options(tbs-tbs INTERFACE /arch:AVX)
         target_compile_definitions(tbs-tbs INTERFACE TBS_USE_AVX)
         message(STATUS "AVX support enabled.")
     endif()
@@ -55,11 +55,13 @@ endif()
 
 add_subdirectory(cli)
 
-if(TBS_TESTS)
+if(TBS_BUILD_TESTS)
 	add_subdirectory(tests)
 endif()
 
 target_include_dir_iface(tbs-tbs INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include include)
+
+if(TBS_INSTALL)
 install_target_and_headers(tbs tbs)
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
@@ -68,3 +70,4 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
 install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TBSConfig.cmake
         DESTINATION lib/cmake/tbs)
+endif()

@@ -193,10 +193,79 @@ int TBSCLI(int argc, const char* argv[])
     bNaked = result["naked"].as<bool>();
     bJson = result["json"].as<bool>();
 
+<<<<<<< HEAD
     FileView fileView(file.c_str());
     
     if (fileView.has_error()) {
         printf("Failed to open/map file '%s'\n", file.c_str());
+=======
+    try {
+        FileView fileView(file.c_str());
+        const char* fileBegin = (char*)((const void*)fileView);
+        const char* fileEnd = fileBegin + fileView.size();
+
+        const auto handleSingleResult = [&] {
+            TBS::Pattern::Result result;
+
+            if (!TBS::Light::ScanOne(fileBegin, fileEnd, result, pattern.c_str()))
+            {
+                printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
+                return 3;
+            }
+
+            if (bJson) 
+                
+                printf(
+                R"({
+                    \"%s\" : %d
+                })", pattern.c_str(), result - (size_t)fileBegin);
+            
+            else printf("0x%016Xll", result - (size_t)fileBegin);
+
+            return 0;
+            };
+
+        const auto handleMultiResult = [&] {
+            TBS::Pattern::Results results;
+
+            if (!TBS::Light::Scan(fileBegin, fileEnd, results, pattern.c_str()))
+            {
+                printf("pattern '%s' not found in '%s'\n", pattern.c_str(), file.c_str());
+                return 3;
+            }
+
+            if (bJson)
+            {
+                printf(
+                    R"({
+                    \"%s\" : [
+                ])", pattern.c_str());
+
+                for (size_t i = 0; i < results.size(); i++)
+                {
+                    if (i != 0)
+                        printf(", ");
+
+                    printf("%ull", results[i] - (size_t)fileBegin);
+                }
+
+                printf("]\n}");
+
+                return 0;
+            }
+
+            for (auto res : results)
+                printf("0x%016Xll\n", res - (size_t)fileBegin);
+
+            return 0;
+            };
+
+        return (bSingleRes ? handleSingleResult() : handleMultiResult());
+    }
+    catch (const std::exception& e)
+    {
+        printf("%s", e.what());
+>>>>>>> 107ee056ebb9a5bc6f76eccc75419f20fa60bf42
         return 2;
     }
     

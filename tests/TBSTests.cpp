@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <iostream>
+
 #include <TBS/TBS.hpp>
 
 using namespace TBS;
@@ -96,7 +97,7 @@ TEST_CASE("Memory Comparing Masked")
 		CHECK(Pattern::Parse(testCase.mPattern, res));
 		CHECK_EQ(res.mPattern.size(), testCase.mPatternExpectedLength);
 		CHECK_EQ(res.mCompareMask.size(), testCase.mMaskExpectedLength);
-		CHECK(Memory::CompareWithMask(testCase.mTestCase, res.mPattern.data(), res.mPattern.size(), res.mCompareMask.data()));
+		CHECK(Compare(testCase.mTestCase, res.mPattern.data(), res.mPattern.size(), res.mCompareMask.data()));
 	}
 }
 
@@ -215,6 +216,26 @@ TEST_CASE("Pattern Sliced Scan Test")
 
 	// Sanity Checks, expecting TBS::Scan to return false (patterns already at end and didnt found anything)
 	CHECK_FALSE(Scan(state));
+}
+
+TEST_CASE("All Wildcards")
+{
+	using namespace TBS;
+
+	State<> state;
+	const UByte data[] = { 0xDE, 0xAD, 0xBE, 0xEF };
+
+	CHECK(Scan(state.AddPattern(state.PatternBuilder()
+		.setScanStart(data)
+		.setScanEnd(data + sizeof(data))
+		.setUID("Scan1")
+		.setPattern("? ?") // all wildcards
+		.Build())) == true);
+	const auto& res = state["Scan1"].ResultsGet();
+	CHECK(res.size() == 3u);
+	CHECK(res[0] == (U64)&data[0]);
+	CHECK(res[1] == (U64)&data[1]);
+	CHECK(res[2] == (U64)&data[2]);
 }
 
 TEST_CASE("Pattern Scan #1")

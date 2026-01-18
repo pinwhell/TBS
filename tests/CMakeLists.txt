@@ -16,6 +16,8 @@ foreach(TST_SRC ${ALL_TST_SRC})
         	target_link_options(${TST_SRC_NAME} PRIVATE /STACK:32000000)
     	endif()
 
+        
+
 	target_link_libraries(${TST_SRC_NAME} tbs::tbs doctest_with_main)
     endif()
 endforeach()
