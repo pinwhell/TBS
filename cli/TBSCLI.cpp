@@ -56,7 +56,7 @@ private:
         int mapViewI;
     };
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
     inline void Init(const char* filePath)
     {
         fileSize = std::filesystem::file_size(filePath);
@@ -216,10 +216,10 @@ int TBSCLI(int argc, const char* argv[])
             
             printf(
             R"({
-                "%s" : %d
-            })", pattern.c_str(), result - (size_t)fileBegin);
-        
-        else printf("0x%016Xll", result - (size_t)fileBegin);
+                "%s" : %llu
+            })", pattern.c_str(), (unsigned long long)(result - (size_t)fileBegin));
+
+        else printf("0x%016llX", (unsigned long long)(result - (size_t)fileBegin));
 
         return 0;
         };
@@ -245,7 +245,7 @@ int TBSCLI(int argc, const char* argv[])
                 if (i != 0)
                     printf(", ");
 
-                printf("%ull", results[i] - (size_t)fileBegin);
+                printf("%llu", (unsigned long long)(results[i] - (size_t)fileBegin));
             }
 
             printf("]\n}");
@@ -254,7 +254,7 @@ int TBSCLI(int argc, const char* argv[])
         }
 
         for (auto res : results)
-            printf("0x%016Xll\n", res - (size_t)fileBegin);
+            printf("0x%016llX\n", (unsigned long long)(res - (size_t)fileBegin));
 
         return 0;
         };
